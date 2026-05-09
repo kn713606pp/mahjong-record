@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>使用手冊 — 麻將戰績分析中心</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root { --primary: #4f46e5; --doraemon: #0095d9; --bg: #e4f3ff; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Noto Sans TC', sans-serif; background: var(--bg); color: #1e293b; line-height: 1.7; }
+  a { color: var(--primary); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Nav */
+  nav { background: var(--doraemon); color: white; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+  .nav-inner { max-width: 900px; margin: 0 auto; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; }
+  .nav-title { font-weight: 700; font-size: 1.1rem; display: flex; align-items: center; gap: 8px; }
+  .nav-link { background: rgba(255,255,255,0.2); padding: 6px 14px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; color: white; }
+  .nav-link:hover { background: rgba(255,255,255,0.35); text-decoration: none; }
+
+  /* Layout */
+  .wrapper { max-width: 900px; margin: 0 auto; padding: 32px 20px 80px; }
+
+  /* Hero */
+  .hero { background: linear-gradient(135deg, var(--doraemon), #4f46e5); color: white; border-radius: 16px; padding: 40px 32px; margin-bottom: 40px; text-align: center; }
+  .hero h1 { font-size: 2rem; font-weight: 700; margin-bottom: 8px; }
+  .hero p { opacity: 0.9; font-size: 1.05rem; margin-bottom: 20px; }
+  .hero-btn { display: inline-block; background: white; color: var(--primary); font-weight: 700; padding: 10px 28px; border-radius: 30px; font-size: 0.95rem; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+  .hero-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0,0,0,0.2); text-decoration: none; }
+
+  /* TOC */
+  .toc { background: white; border-radius: 12px; padding: 24px 28px; margin-bottom: 36px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); }
+  .toc h2 { font-size: 1rem; color: #64748b; font-weight: 600; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .toc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+  .toc-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; background: #f8fafc; font-size: 0.9rem; font-weight: 500; color: #374151; transition: background 0.2s; }
+  .toc-item:hover { background: #eef2ff; text-decoration: none; color: var(--primary); }
+  .toc-item .ico { font-size: 1.1rem; }
+
+  /* Sections */
+  section { background: white; border-radius: 16px; padding: 32px; margin-bottom: 28px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); scroll-margin-top: 80px; }
+  section h2 { font-size: 1.4rem; font-weight: 700; color: #1e293b; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; padding-bottom: 12px; border-bottom: 2px solid #eef2ff; }
+  section h3 { font-size: 1.05rem; font-weight: 700; color: var(--primary); margin: 22px 0 10px; }
+  section p { color: #374151; margin-bottom: 12px; }
+  section ul, section ol { padding-left: 20px; margin-bottom: 14px; }
+  section li { margin-bottom: 6px; color: #374151; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 0.9rem; }
+  th { background: #f1f5f9; padding: 10px 14px; text-align: left; font-weight: 700; color: #475569; border-bottom: 2px solid #e2e8f0; }
+  td { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; color: #374151; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafbff; }
+
+  /* Step boxes */
+  .steps { counter-reset: step; display: flex; flex-direction: column; gap: 12px; margin: 14px 0; }
+  .step { display: flex; gap: 14px; align-items: flex-start; }
+  .step-num { counter-increment: step; background: var(--primary); color: white; width: 28px; height: 28px; border-radius: 50%; font-weight: 700; font-size: 0.85rem; flex-shrink: 0; display: flex; align-items: center; justify-content: center; margin-top: 2px; }
+  .step-body { flex: 1; }
+  .step-body strong { display: block; font-weight: 700; color: #1e293b; margin-bottom: 2px; }
+
+  /* Callout */
+  .callout { border-radius: 10px; padding: 14px 18px; margin: 16px 0; font-size: 0.9rem; display: flex; gap: 10px; align-items: flex-start; }
+  .callout.tip { background: #f0fdf4; border-left: 4px solid #16a34a; }
+  .callout.warn { background: #fff7ed; border-left: 4px solid #f59e0b; }
+  .callout.info { background: #eff6ff; border-left: 4px solid #3b82f6; }
+  .callout .ci { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+
+  /* Feature badge */
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 0.78rem; font-weight: 700; margin-right: 6px; }
+  .badge-new { background: #dcfce7; color: #15803d; }
+  .badge-tip { background: #fef9c3; color: #92400e; }
+
+  /* Code */
+  code { background: #f1f5f9; padding: 2px 7px; border-radius: 5px; font-family: monospace; font-size: 0.88rem; color: #1e293b; }
+
+  /* Two column */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 14px 0; }
+  @media (max-width: 600px) { .two-col { grid-template-columns: 1fr; } .hero h1 { font-size: 1.5rem; } }
+
+  /* Platform card */
+  .platform { border: 2px solid #e2e8f0; border-radius: 12px; padding: 18px; }
+  .platform h4 { font-weight: 700; margin-bottom: 12px; font-size: 1rem; }
+
+  footer { text-align: center; color: #94a3b8; font-size: 0.85rem; padding: 20px; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <div class="nav-title">🀄 麻將戰績分析中心 · 使用手冊</div>
+    <a href="mj.html" class="nav-link">← 返回 App</a>
+  </div>
+</nav>
+
+<div class="wrapper">
+
+  <!-- Hero -->
+  <div class="hero">
+    <h1>🀄 麻將戰績分析中心</h1>
+    <p>詳細記錄與分析每一場激戰<br>完整使用手冊</p>
+    <a href="mj.html" class="hero-btn">立即開始使用 →</a>
+  </div>
+
+  <!-- TOC -->
+  <div class="toc">
+    <h2>📖 目錄</h2>
+    <div class="toc-grid">
+      <a href="#quick-start" class="toc-item"><span class="ico">🚀</span>快速上手</a>
+      <a href="#add-session" class="toc-item"><span class="ico">📝</span>新增牌局</a>
+      <a href="#list-view" class="toc-item"><span class="ico">📋</span>列表模式</a>
+      <a href="#calendar" class="toc-item"><span class="ico">📅</span>行事曆</a>
+      <a href="#dashboard" class="toc-item"><span class="ico">📊</span>戰績儀表板</a>
+      <a href="#presets" class="toc-item"><span class="ico">👥</span>對戰組合</a>
+      <a href="#quick-add" class="toc-item"><span class="ico">⚡</span>快速記錄</a>
+      <a href="#backup" class="toc-item"><span class="ico">💾</span>備份還原</a>
+      <a href="#dark-mode" class="toc-item"><span class="ico">🌙</span>深色模式</a>
+      <a href="#pwa" class="toc-item"><span class="ico">📱</span>安裝到手機</a>
+      <a href="#data" class="toc-item"><span class="ico">🔒</span>資料說明</a>
+    </div>
+  </div>
+
+  <!-- Quick Start -->
+  <section id="quick-start">
+    <h2>🚀 快速上手</h2>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body"><strong>開啟 App</strong>用瀏覽器開啟 <a href="mj.html">麻將戰績分析中心</a></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body"><strong>新增第一場</strong>點右上角藍色「新增牌局」按鈕，填入牌局資訊</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body"><strong>設定對戰組合</strong>點紫色「對戰組合」按鈕，預存常用牌友名單</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body"><strong>查看統計</strong>點「查看儀表板」查看個人戰績、圖表與分析</div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-body"><strong>安裝到手機</strong>將網頁加入主畫面，離線也能使用</div></div>
+    </div>
+    <div class="callout info">
+      <span class="ci">💡</span>
+      <div>所有資料儲存在<strong>你的瀏覽器本機</strong>，不會上傳至任何伺服器，隱私安全。</div>
+    </div>
+  </section>
+
+  <!-- Add Session -->
+  <section id="add-session">
+    <h2>📝 新增牌局</h2>
+    <p>點右上角藍色 <strong>「新增牌局」</strong> 按鈕開啟表單。</p>
+
+    <h3>基本資訊</h3>
+    <table>
+      <tr><th>欄位</th><th>說明</th></tr>
+      <tr><td>日期</td><td>牌局日期，預設今天</td></tr>
+      <tr><td>開始 / 結束時間</td><td>預設為現在往前推 3 小時</td></tr>
+      <tr><td>地點</td><td>輸入地點，支援歷史紀錄自動完成下拉</td></tr>
+      <tr><td>底 / 台</td><td>底注與台費金額</td></tr>
+      <tr><td>抽頭 / 場費</td><td>若有抽頭費用請填入；系統會自動驗算總和</td></tr>
+      <tr><td>備註</td><td>記錄特殊牌型、趣事等，支援語音輸入 🎤</td></tr>
+    </table>
+
+    <h3>計分方式選擇</h3>
+    <div class="two-col">
+      <div style="background:#eff6ff;border-radius:10px;padding:18px">
+        <p style="font-weight:700;color:#1d4ed8;margin-bottom:8px">🔵 籌碼制（推薦）</p>
+        <ul>
+          <li>記錄四位玩家各自的輸贏籌碼</li>
+          <li>系統自動驗算：四人總和＋抽頭必須 = 0</li>
+          <li>可使用「對戰組合」一鍵填入玩家名稱</li>
+          <li>儀表板可產生完整對戰數據</li>
+        </ul>
+      </div>
+      <div style="background:#f0fdf4;border-radius:10px;padding:18px">
+        <p style="font-weight:700;color:#15803d;margin-bottom:8px">🟢 現金制</p>
+        <ul>
+          <li>只記錄「我」的個人輸贏金額</li>
+          <li>適合只知道自己輸贏的情況</li>
+          <li>正數 = 贏、負數 = 輸</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout tip">
+      <span class="ci">🎤</span>
+      <div>地點、備註、玩家名稱欄位旁有麥克風圖示，點擊即可<strong>語音輸入</strong>（需瀏覽器支援，建議使用 Chrome）。</div>
+    </div>
+  </section>
+
+  <!-- List View -->
+  <section id="list-view">
+    <h2>📋 列表模式</h2>
+    <p>首頁預設為列表模式，依日期分組顯示所有牌局。</p>
+
+    <h3>日期分組標題</h3>
+    <p>每組標題列顯示：<strong>日期</strong>、當日場次數、以及<strong>主玩家當日輸贏合計</strong>（綠色=贏、紅色=輸）。</p>
+
+    <h3>篩選工具</h3>
+    <table>
+      <tr><th>篩選條件</th><th>說明</th></tr>
+      <tr><td>關鍵字搜尋</td><td>同時搜尋玩家名稱、地點、備註</td></tr>
+      <tr><td>開始日期</td><td>只顯示該日期之後的紀錄</td></tr>
+      <tr><td>結束日期</td><td>只顯示該日期之前的紀錄</td></tr>
+      <tr><td>清除篩選</td><td>一鍵清空所有條件</td></tr>
+    </table>
+
+    <h3>牌局卡片操作</h3>
+    <p>每張卡片右上角有三個圖示按鈕：</p>
+    <ul>
+      <li>🗓️ <strong>行事曆圖示</strong> — 匯出此場為 <code>.ics</code> 檔（可匯入 Apple / Google 行事曆）</li>
+      <li>✏️ <strong>鉛筆圖示</strong> — 編輯此場紀錄</li>
+      <li>🗑️ <strong>垃圾桶</strong> — 刪除此場（會跳出確認視窗）</li>
+    </ul>
+  </section>
+
+  <!-- Calendar -->
+  <section id="calendar">
+    <h2>📅 行事曆模式</h2>
+    <p>點右上角切換鈕切換至「行事曆」視圖。</p>
+    <table>
+      <tr><th>元素</th><th>說明</th></tr>
+      <tr><td>淺藍色格子</td><td>該日有牌局紀錄</td></tr>
+      <tr><td>格子內金額</td><td>主玩家當日損益總和（綠=贏、紅=輸）</td></tr>
+      <tr><td>格子右下角數字</td><td>當日場次數（例：2場）</td></tr>
+      <tr><td>今天</td><td>日期數字以藍色圓圈標示</td></tr>
+      <tr><td>點擊格子</td><td>開啟當日牌局清單，可新增/編輯/刪除</td></tr>
+      <tr><td>左右箭頭</td><td>切換上/下個月</td></tr>
+    </table>
+  </section>
+
+  <!-- Dashboard -->
+  <section id="dashboard">
+    <h2>📊 戰績儀表板</h2>
+    <p>點 <strong>「查看儀表板」</strong> 按鈕開啟全方位數據分析。</p>
+
+    <h3>統計卡片</h3>
+    <table>
+      <tr><th>卡片</th><th>說明</th></tr>
+      <tr><td>本月場次</td><td>當月打了幾場</td></tr>
+      <tr><td>本月輸贏</td><td>當月累積損益</td></tr>
+      <tr><td>本月場均</td><td>每場平均輸贏</td></tr>
+      <tr><td>本月勝率</td><td>當月贏場比例</td></tr>
+      <tr><td>目前連勝/連敗</td><td>🔥 連勝或 💔 連敗條數</td></tr>
+      <tr><td>本年輸贏</td><td>今年累積損益</td></tr>
+      <tr><td>生涯總計</td><td>所有紀錄的總損益</td></tr>
+      <tr><td>最大單場勝利/敗北</td><td>歷史最高/最低單場成績</td></tr>
+    </table>
+
+    <div class="callout tip">
+      <span class="ci">💡</span>
+      <div>左上角「分析對象」下拉選單可切換分析任意玩家（籌碼制紀錄中出現的所有人）。</div>
+    </div>
+
+    <h3>四個分析分頁</h3>
+    <table>
+      <tr><th>分頁</th><th>內容</th></tr>
+      <tr><td>📊 當月比較</td><td>長條圖比較當月所有玩家輸贏，可勾選要顯示的玩家</td></tr>
+      <tr><td>📈 累積損益</td><td>折線圖呈現主玩家歷場累積損益走勢，看出長期趨勢</td></tr>
+      <tr><td>🤜 對戰分析</td><td>與每位對手同場時的勝率與分差，找出剋星和軟柿子</td></tr>
+      <tr><td>⏰ 時段分析</td><td>依星期幾、時段（早/午/晚/深夜）分析輸贏習慣</td></tr>
+    </table>
+
+    <h3>匯出本月紀錄</h3>
+    <p>點儀表板右上角「匯出本月紀錄」→ 下載整月的 <code>.ics</code> 行事曆檔案，可一次匯入所有牌局到行事曆。</p>
+  </section>
+
+  <!-- Presets -->
+  <section id="presets">
+    <h2>👥 對戰組合管理 <span class="badge badge-new">最多 10 組</span></h2>
+    <p>預先儲存常用牌友名單，新增牌局時一鍵套用，省去每次重新輸入姓名的麻煩。</p>
+
+    <h3>設定新組合</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body"><strong>點 Header 紫色「對戰組合」按鈕</strong></div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body"><strong>點任一空格子</strong>（顯示「＋ 點擊設定」的格子）</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body"><strong>填入組合名稱</strong>，例如「龍潭老班底」、「公司牌咖」</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body"><strong>填入四位玩家姓名</strong>（玩家名稱支援歷史自動完成）</div></div>
+      <div class="step"><div class="step-num">5</div><div class="step-body"><strong>點「儲存組合」</strong>完成</div></div>
+    </div>
+
+    <h3>使用組合新增牌局</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body"><strong>點「新增牌局」</strong>，計分方式選「籌碼制」</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body"><strong>看到紫色框「⚡ 快速套用對戰組合」</strong>下拉選單</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body"><strong>選擇組合</strong> → 四位玩家姓名自動填入</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body"><strong>只需輸入各人輸贏金額</strong>即可儲存</div></div>
+    </div>
+
+    <h3>編輯 / 刪除組合</h3>
+    <p>在管理介面中，已設定的格子右上角有「編輯」和「刪除」按鈕。</p>
+  </section>
+
+  <!-- Quick Add -->
+  <section id="quick-add">
+    <h2>⚡ 快速記錄輸贏</h2>
+    <p>不需開啟完整表單，直接在列表頁快速記帳，適合現金制的簡易紀錄。</p>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body"><strong>在列表頁篩選列</strong>找到「快速記錄輸贏」文字，點擊展開</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body"><strong>填入日期、地點（選填）、輸贏金額</strong><br>正數 = 贏、負數 = 輸（例：輸 500 填 <code>-500</code>）</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body"><strong>點「快速記錄」</strong>，立即存入，以現金制模式記錄</div></div>
+    </div>
+    <div class="callout tip">
+      <span class="ci">⚡</span>
+      <div>快速記錄適合「只記得自己輸贏多少、其他人不重要」的情境，節省輸入時間。</div>
+    </div>
+  </section>
+
+  <!-- Backup -->
+  <section id="backup">
+    <h2>💾 資料備份與還原</h2>
+    <div class="callout warn">
+      <span class="ci">⚠️</span>
+      <div>資料儲存在瀏覽器本機。<strong>清除瀏覽器快取會刪除所有資料</strong>，強烈建議定期備份！</div>
+    </div>
+
+    <h3>備份（匯出 JSON）</h3>
+    <p>點 Header 綠色 <strong>「備份」按鈕</strong> → 自動下載 <code>mahjong-backup-YYYY-MM-DD.json</code></p>
+    <p>建議：每個月備份一次，換電腦/瀏覽器前必定備份。</p>
+
+    <h3>還原（匯入 JSON）</h3>
+    <p>點 Header 藍色 <strong>「還原」按鈕</strong> → 選擇備份的 <code>.json</code> 檔案 → 確認後資料完整還原。</p>
+    <div class="callout warn">
+      <span class="ci">⚠️</span>
+      <div>匯入會<strong>覆蓋</strong>目前所有資料，執行前請確認。</div>
+    </div>
+
+    <h3>換電腦 / 換瀏覽器的遷移步驟</h3>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body"><strong>在舊瀏覽器</strong>點「備份」下載 JSON 檔</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body"><strong>將 JSON 檔</strong>複製到新電腦（或用 LINE / Email 傳送）</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body"><strong>在新瀏覽器</strong>開啟 App，點「還原」選擇 JSON 檔</div></div>
+      <div class="step"><div class="step-num">4</div><div class="step-body"><strong>完成！</strong>所有紀錄完整移轉</div></div>
+    </div>
+  </section>
+
+  <!-- Dark Mode -->
+  <section id="dark-mode">
+    <h2>🌙 深色模式</h2>
+    <p>點 Header 右側 <strong>月亮 🌙 按鈕</strong>，即可切換深色 / 淺色模式。</p>
+    <p>偏好設定會自動儲存，下次開啟 App 時同樣套用。</p>
+    <div class="callout tip">
+      <span class="ci">💡</span>
+      <div>深夜打牌時開啟深色模式，保護眼睛，也讓旁邊的人不被螢幕亮度打擾。</div>
+    </div>
+  </section>
+
+  <!-- PWA -->
+  <section id="pwa">
+    <h2>📱 安裝到手機主畫面</h2>
+    <p>本 App 支援 PWA（Progressive Web App），安裝後可<strong>離線使用</strong>，外觀與原生 App 相同。</p>
+
+    <div class="two-col" style="margin-top:20px">
+      <div class="platform">
+        <h4>🍎 iOS（Safari）</h4>
+        <div class="steps">
+          <div class="step"><div class="step-num">1</div><div class="step-body">用 <strong>Safari</strong> 開啟 App 網址</div></div>
+          <div class="step"><div class="step-num">2</div><div class="step-body">點底部 <strong>「分享」</strong> 圖示（方框帶箭頭）</div></div>
+          <div class="step"><div class="step-num">3</div><div class="step-body">選 <strong>「加入主畫面」</strong></div></div>
+          <div class="step"><div class="step-num">4</div><div class="step-body">點「加入」完成</div></div>
+        </div>
+      </div>
+      <div class="platform">
+        <h4>🤖 Android（Chrome）</h4>
+        <div class="steps">
+          <div class="step"><div class="step-num">1</div><div class="step-body">用 <strong>Chrome</strong> 開啟 App 網址</div></div>
+          <div class="step"><div class="step-num">2</div><div class="step-body">點右上角選單（三個點 ⋮）</div></div>
+          <div class="step"><div class="step-num">3</div><div class="step-body">選 <strong>「安裝應用程式」</strong></div></div>
+          <div class="step"><div class="step-num">4</div><div class="step-body">點「安裝」完成</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="callout info" style="margin-top:16px">
+      <span class="ci">📶</span>
+      <div>安裝後首次開啟需有網路（載入靜態資源）。之後即使斷網也能正常記錄與查看紀錄。</div>
+    </div>
+  </section>
+
+  <!-- Data -->
+  <section id="data">
+    <h2>🔒 資料說明</h2>
+    <table>
+      <tr><th>項目</th><th>說明</th></tr>
+      <tr><td>儲存位置</td><td>瀏覽器 localStorage，完全本機，不上傳</td></tr>
+      <tr><td>牌局資料 Key</td><td><code>mahjong_sessions_v14</code></td></tr>
+      <tr><td>對戰組合 Key</td><td><code>mahjong_presets_v1</code></td></tr>
+      <tr><td>主玩家設定</td><td><code>mahjong_main_player_v14</code></td></tr>
+      <tr><td>深色模式偏好</td><td><code>mahjong_dark_mode</code></td></tr>
+      <tr><td>不同瀏覽器</td><td>Chrome / Safari / Firefox 資料各自獨立，不互通</td></tr>
+      <tr><td>無痕模式</td><td>關閉視窗後資料消失，請勿在無痕模式使用</td></tr>
+    </table>
+    <div class="callout warn">
+      <span class="ci">⚠️</span>
+      <div>定期使用 <strong>JSON 備份</strong>功能保存資料！清除瀏覽器快取或重新安裝瀏覽器可能導致資料遺失。</div>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  🀄 麻將戰績分析中心 · 使用手冊 · 最後更新：2026-05-09
+</footer>
+</body>
+</html>
