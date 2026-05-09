@@ -175,6 +175,10 @@
                 <p class="text-gray-600 mt-1">詳細記錄與分析每一場激戰</p>
             </div>
              <div class="flex items-center gap-4">
+                <button id="presets-btn" class="flex items-center gap-2 bg-white text-gray-700 font-semibold py-2 px-4 rounded-lg shadow hover:bg-gray-50 transition">
+                    <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    <span class="hidden sm:inline">對戰組合</span>
+                </button>
                 <button id="dashboard-btn" class="flex items-center gap-2 bg-white text-gray-700 font-semibold py-2 px-4 rounded-lg shadow hover:bg-gray-50 transition">
                     <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0h6m4-6v6a2 2 0 002 2h2a2 2 0 002-2v-6a2 2 0 00-2-2h-2a2 2 0 00-2 2z"></path></svg>
                     <span>查看儀表板</span>
@@ -273,6 +277,7 @@ document.addEventListener('DOMContentLoaded', () => {
             view: 'list', // Default view is now list
             calendarDate: new Date(),
             dashboardSelectedPlayers: [],
+            presets: [],
             filters: {
                 keyword: '',
                 startDate: '',
@@ -315,6 +320,126 @@ document.addEventListener('DOMContentLoaded', () => {
             requestAnimationFrame(() => modal.classList.add('modal-open'));
             document.getElementById('confirm-cancel').onclick = () => { modal.classList.remove('modal-open'); setTimeout(() => modal.remove(), 300); };
             document.getElementById('confirm-ok').onclick = () => { modal.classList.remove('modal-open'); setTimeout(() => { modal.remove(); onConfirm(); }, 300); };
+        },
+        /* ===== 對戰組合管理 ===== */
+        savePresets() {
+            localStorage.setItem('mahjong_presets_v1', JSON.stringify(this.state.presets));
+        },
+        openPresetsModal() {
+            const MAX = 10;
+            const renderGrid = () => {
+                const slots = Array.from({ length: MAX }, (_, i) => {
+                    const p = this.state.presets[i];
+                    if (p) {
+                        const badges = p.players.filter(Boolean).map(n =>
+                            `<span class="bg-white px-2 py-0.5 rounded-full text-xs font-medium text-gray-600 border border-gray-200">${n}</span>`
+                        ).join('');
+                        return `<div class="p-4 border-2 border-purple-200 rounded-xl bg-purple-50">
+                            <div class="flex justify-between items-start mb-2">
+                                <span class="text-xs text-purple-400 font-semibold">組合 ${i + 1}</span>
+                                <div class="flex gap-1">
+                                    <button data-pedit="${p.id}" class="text-xs px-2 py-1 bg-white border border-gray-200 rounded hover:border-purple-300 text-purple-600 transition">編輯</button>
+                                    <button data-pdel="${p.id}" class="text-xs px-2 py-1 bg-white border border-gray-200 rounded hover:border-red-300 text-red-500 transition">刪除</button>
+                                </div>
+                            </div>
+                            <p class="font-bold text-gray-800 text-sm mb-2 truncate">${p.name}</p>
+                            <div class="flex flex-wrap gap-1">${badges}</div>
+                        </div>`;
+                    }
+                    return `<div data-pnew="${i}" class="p-4 border-2 border-dashed border-gray-200 rounded-xl text-center cursor-pointer hover:border-purple-300 hover:bg-purple-50 transition min-h-[100px] flex flex-col items-center justify-center gap-1">
+                        <span class="text-xs text-gray-400 font-semibold">組合 ${i + 1}</span>
+                        <span class="text-2xl text-gray-300">＋</span>
+                        <span class="text-xs text-gray-400">點擊設定</span>
+                    </div>`;
+                });
+                return `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">${slots.join('')}</div>`;
+            };
+
+            const modalHTML = `<div id="presets-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop">
+                <div class="bg-white rounded-xl shadow-xl w-full max-w-3xl modal-content max-h-[90vh] flex flex-col">
+                    <div class="p-5 border-b flex justify-between items-center">
+                        <div>
+                            <h3 class="text-xl font-semibold">對戰組合管理</h3>
+                            <p class="text-sm text-gray-500 mt-0.5">設定常用牌友組合，新增牌局時一鍵套用（最多 10 組）</p>
+                        </div>
+                        <button id="close-presets-btn" class="p-2 text-gray-400 hover:text-gray-700 rounded-full text-2xl leading-none">&times;</button>
+                    </div>
+                    <div class="p-6 flex-grow overflow-y-auto">
+                        <div id="presets-grid-wrap">${renderGrid()}</div>
+                        <div id="preset-editor-area" class="mt-5 hidden"></div>
+                    </div>
+                </div>
+            </div>`;
+
+            this.elements.modalContainer.innerHTML += modalHTML;
+            const modal = document.getElementById('presets-modal');
+            requestAnimationFrame(() => modal.classList.add('modal-open'));
+
+            document.getElementById('close-presets-btn').onclick = () => this.closeModal('presets-modal', false);
+
+            modal.addEventListener('click', e => {
+                const editBtn = e.target.closest('[data-pedit]');
+                const delBtn = e.target.closest('[data-pdel]');
+                const newBtn = e.target.closest('[data-pnew]');
+                if (editBtn) this.openPresetEditor(editBtn.dataset.pedit, null, renderGrid);
+                if (newBtn) this.openPresetEditor(null, parseInt(newBtn.dataset.pnew), renderGrid);
+                if (delBtn) {
+                    this.showConfirm('確定要刪除這個對戰組合嗎？', () => {
+                        this.state.presets = this.state.presets.filter(p => p.id !== delBtn.dataset.pdel);
+                        this.savePresets();
+                        this.showToast('已刪除', 'info');
+                        document.getElementById('presets-grid-wrap').innerHTML = renderGrid();
+                        document.getElementById('preset-editor-area').classList.add('hidden');
+                    });
+                }
+            });
+        },
+        openPresetEditor(presetId, slotIndex, renderGrid) {
+            const preset = presetId ? this.state.presets.find(p => p.id === presetId) : null;
+            const allPlayers = this.getAllPlayerNames();
+            const acHtml = `<datalist id="preset-ac">${allPlayers.map(n => `<option value="${n}">`).join('')}</datalist>`;
+            const mkInput = (i, val) => `<div class="flex items-center gap-2">
+                <span class="text-xs text-gray-500 font-semibold w-12 shrink-0">玩家 ${i + 1}</span>
+                <input type="text" name="preset-player" value="${val || ''}" placeholder="玩家名稱" list="preset-ac" class="p-2 border rounded-md flex-1 text-sm">
+            </div>`;
+            const area = document.getElementById('preset-editor-area');
+            area.innerHTML = `<div class="bg-purple-50 p-5 rounded-xl border-2 border-purple-200">
+                <h4 class="font-bold text-gray-800 mb-4">${preset ? '編輯對戰組合' : `設定組合 ${(slotIndex + 1)}`}</h4>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <div class="sm:col-span-2"><label class="text-sm font-semibold text-gray-700">組合名稱</label>
+                        <input type="text" id="preset-name-input" value="${preset?.name || ''}" placeholder="例：龍潭老班底、公司牌咖…" class="mt-1 p-2 border rounded-md w-full text-sm"></div>
+                    ${[0, 1, 2, 3].map(i => mkInput(i, preset?.players[i])).join('')}
+                </div>
+                ${acHtml}
+                <div class="flex gap-3 justify-end">
+                    <button id="preset-ed-cancel" class="py-2 px-5 bg-white border border-gray-300 rounded-lg font-medium hover:bg-gray-50 text-sm">取消</button>
+                    <button id="preset-ed-save" class="py-2 px-5 btn-primary rounded-lg font-medium text-sm">儲存組合</button>
+                </div>
+            </div>`;
+            area.classList.remove('hidden');
+            area.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+            document.getElementById('preset-ed-cancel').onclick = () => { area.classList.add('hidden'); area.innerHTML = ''; };
+            document.getElementById('preset-ed-save').onclick = () => {
+                const name = document.getElementById('preset-name-input').value.trim();
+                const players = [...document.querySelectorAll('input[name="preset-player"]')].map(el => el.value.trim());
+                if (!name) { this.showToast('請填入組合名稱', 'error'); return; }
+                if (players.filter(Boolean).length < 2) { this.showToast('至少需填入兩位玩家', 'error'); return; }
+                if (presetId) {
+                    const idx = this.state.presets.findIndex(p => p.id === presetId);
+                    if (idx > -1) this.state.presets[idx] = { id: presetId, name, players };
+                } else {
+                    if (this.state.presets.length >= 10) { this.showToast('最多只能設定 10 組', 'warning'); return; }
+                    const newP = { id: Date.now().toString(), name, players };
+                    this.state.presets.splice(slotIndex, 0, newP);
+                    if (this.state.presets.length > 10) this.state.presets = this.state.presets.slice(0, 10);
+                }
+                this.savePresets();
+                this.showToast('對戰組合已儲存', 'success');
+                area.classList.add('hidden');
+                area.innerHTML = '';
+                document.getElementById('presets-grid-wrap').innerHTML = renderGrid();
+            };
         },
         /* ===== DARK MODE ===== */
         toggleDarkMode() {
@@ -449,6 +574,7 @@ document.addEventListener('DOMContentLoaded', () => {
         bindEvents() {
             this.elements.addSessionBtn.onclick = () => this.openModal();
             this.elements.dashboardBtn.onclick = () => this.openDashboardModal();
+            document.getElementById('presets-btn').onclick = () => this.openPresetsModal();
             document.getElementById('dark-mode-btn').onclick = () => this.toggleDarkMode();
             document.getElementById('export-json-btn').onclick = () => this.exportJSON();
             document.getElementById('import-json-btn').onclick = () => document.getElementById('json-import-input').click();
@@ -538,6 +664,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const icon = document.getElementById('dark-icon');
                 if (icon) icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>';
             }
+            const presetsData = localStorage.getItem('mahjong_presets_v1');
+            this.state.presets = presetsData ? JSON.parse(presetsData) : [];
             const mainPlayerName = localStorage.getItem('mahjong_main_player_v14');
             if (mainPlayerName) this.state.mainPlayerName = mainPlayerName;
 
@@ -998,7 +1126,29 @@ document.addEventListener('DOMContentLoaded', () => {
                     const score = record?.players?.[i]?.score === undefined ? '' : record.players[i].score;
                     playerFields += `<div class="flex items-center gap-2"><input type="text" id="player-name-${i}" name="player-name" placeholder="玩家 ${i+1}" value="${name}" class="p-2 border rounded-md w-full" list="players-ac"><button class="speech-btn p-2 text-gray-500 hover:text-indigo-600" data-target="player-name-${i}" title="語音輸入"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg></button><input type="number" name="player-score" placeholder="輸贏" value="${score}" class="p-2 border rounded-md w-full"></div>`;
                 }
-                area.innerHTML = `<label class="block text-sm font-medium text-gray-700">四人輸贏</label><div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">${playerFields}</div><p id="score-sum-error" class="text-red-500 text-sm text-center mt-2 hidden">四人輸贏總和 + 抽頭不為 0</p>`;
+                const presetOptions = this.state.presets.length > 0
+                    ? `<div class="mb-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                        <label class="text-sm font-semibold text-purple-700">⚡ 快速套用對戰組合</label>
+                        <select id="preset-select" class="mt-1.5 p-2 border border-purple-200 rounded-md w-full text-sm bg-white">
+                            <option value="">— 選擇已儲存的組合 —</option>
+                            ${this.state.presets.map(p => `<option value="${p.id}">${p.name}（${p.players.filter(Boolean).join('、')}）</option>`).join('')}
+                        </select>
+                       </div>`
+                    : `<div class="mb-3 p-3 bg-gray-50 border border-dashed border-gray-200 rounded-lg text-xs text-gray-400">尚未設定對戰組合，可點上方「對戰組合」按鈕新增</div>`;
+                area.innerHTML = `${presetOptions}<label class="block text-sm font-medium text-gray-700">四人輸贏</label><div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">${playerFields}</div><p id="score-sum-error" class="text-red-500 text-sm text-center mt-2 hidden">四人輸贏總和 + 抽頭不為 0</p>`;
+                // Bind preset selector
+                const sel = document.getElementById('preset-select');
+                if (sel) {
+                    sel.onchange = () => {
+                        const preset = this.state.presets.find(p => p.id === sel.value);
+                        if (!preset) return;
+                        preset.players.forEach((name, i) => {
+                            const input = document.getElementById(`player-name-${i}`);
+                            if (input) input.value = name || '';
+                        });
+                        this.showToast(`已套用：${preset.name}`, 'success');
+                    };
+                }
             } else {
                 area.innerHTML = `<label class="block text-sm font-medium text-gray-700">我的輸贏</label><input type="number" id="my-score" placeholder="輸入個人輸贏金額" value="${record?.myScore || ''}" class="mt-1 p-2 border rounded-md w-full">`;
             }
