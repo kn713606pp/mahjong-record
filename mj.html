@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>麻將戰績分析中心</title>
+    
+    <!-- For "Add to Home Screen" on iOS -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="麻將戰績">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    
+    <!-- Firebase 配置和認證模組 -->
+    <script src="firebase-config.js"></script>
+    <script src="auth.js"></script>
+    <script src="user-data-manager.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #4f46e5; /* indigo-600 */
+            --primary-hover: #4338ca; /* indigo-700 */
+            --background: #e4f3ff; /* doraemon light blue */
+            --positive-color: #16a34a; /* green-600 */
+            --negative-color: #dc2626; /* red-600 */
+        }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background-color: var(--background);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .modal-backdrop { background-color: rgba(0, 0, 0, 0.6); transition: opacity 0.3s ease; }
+        .modal-content { transition: transform 0.3s ease, opacity 0.3s ease; transform: translateY(20px); opacity: 0; }
+        .modal-open .modal-content { transform: translateY(0); opacity: 1; }
+        .score-positive { color: var(--positive-color); }
+        .score-negative { color: var(--negative-color); }
+        .btn-primary { background-color: var(--primary-color); color: white; transition: background-color 0.2s; }
+        .btn-primary:hover { background-color: var(--primary-hover); }
+        .view-switch-btn.active { background-color: var(--primary-color); color: white; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+        .day-cell { min-height: 90px; cursor: pointer; }
+        .day-cell:hover { background-color: #eef2ff; }
+        .day-cell.has-record { background-color: #e0e7ff; }
+        .day-cell.has-record:hover { background-color: #c7d2fe; }
+        .day-cell.other-month { cursor: default; background-color: #f9fafb; }
+        .day-cell.other-month .day-number { color: #d1d5db; }
+        .day-cell.today .day-number { color: var(--primary-color); font-weight: 700; border: 2px solid var(--primary-color); border-radius: 9999px; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; padding: 2px; }
+        .speech-btn.recording { color: #ef4444; }
+        .stat-card { background: linear-gradient(145deg, #f9fafb, #eef2ff); }
+        /* Toast notifications */
+        #toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column-reverse; gap: 8px; pointer-events: none; }
+        .toast { min-width: 200px; max-width: 360px; padding: 12px 18px; border-radius: 10px; color: white; font-size: 0.875rem; font-weight: 500; opacity: 0; transform: translateY(8px); transition: opacity 0.3s ease, transform 0.3s ease; box-shadow: 0 4px 16px rgba(0,0,0,0.2); pointer-events: auto; display: flex; align-items: center; gap: 8px; }
+        .toast.show { opacity: 1; transform: translateY(0); }
+        .toast.success { background: #16a34a; }
+        .toast.error { background: #dc2626; }
+        .toast.info { background: #4f46e5; }
+        .toast.warning { background: #d97706; }
+        /* Date group header in list view */
+        .date-group-header { background: linear-gradient(90deg, #eef2ff, #e0e7ff); border-left: 4px solid var(--primary-color); padding: 10px 16px; border-radius: 0 8px 8px 0; font-weight: 700; color: #3730a3; display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+        /* Calendar day score */
+        .day-score { font-size: 10px; font-weight: 700; line-height: 1.3; display: block; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .daily-result-marker {
+            position: absolute;
+            bottom: 6px;
+            left: 6px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            color: white;
+            font-size: 10px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+        }
+        .daily-result-marker.win { background-color: var(--positive-color); }
+        .daily-result-marker.loss { background-color: var(--negative-color); }
+        
+        /* 認證相關樣式 */
+        .google-login-btn {
+            background: white;
+            border: 2px solid #e5e7eb;
+            transition: all 0.3s ease;
+        }
+        .google-login-btn:hover {
+            border-color: #4285f4;
+            box-shadow: 0 4px 12px rgba(66, 133, 244, 0.15);
+        }
+        .auth-required { display: none; }
+        .guest-only { display: block; }
+        #auth-error, #auth-success { display: none; }
+        /* Dark mode */
+        body.dark { color-scheme: dark; background-color: #0f172a !important; color: #e2e8f0; }
+        body.dark .bg-white { background-color: #1e293b !important; }
+        body.dark .bg-gray-50 { background-color: #111827 !important; }
+        body.dark .bg-gray-100 { background-color: #1e293b !important; }
+        body.dark .bg-gray-200 { background-color: #334155 !important; }
+        body.dark .text-gray-900, body.dark .text-gray-800 { color: #f1f5f9 !important; }
+        body.dark .text-gray-700 { color: #cbd5e1 !important; }
+        body.dark .text-gray-600, body.dark .text-gray-500 { color: #94a3b8 !important; }
+        body.dark .border-gray-200 { border-color: #334155 !important; }
+        body.dark .shadow-lg, body.dark .shadow-xl, body.dark .shadow-md { box-shadow: 0 4px 16px rgba(0,0,0,0.5) !important; }
+        body.dark .stat-card { background: linear-gradient(145deg, #1e293b, #172554) !important; }
+        body.dark input, body.dark textarea, body.dark select { background-color: #1e293b !important; color: #e2e8f0 !important; border-color: #475569 !important; }
+        body.dark .date-group-header { background: linear-gradient(90deg, #1e293b, #172554) !important; color: #818cf8 !important; border-left-color: #818cf8 !important; }
+        body.dark .day-cell { background-color: #111827; }
+        body.dark .day-cell.has-record { background-color: #172554 !important; }
+        body.dark .day-cell:hover, body.dark .day-cell.has-record:hover { background-color: #1e293b !important; }
+        body.dark .google-login-btn { background: #1e293b !important; border-color: #475569 !important; color: #e2e8f0 !important; }
+        body.dark .filter-section-inner { background-color: #1e293b !important; }
+        /* Quick add */
+        .quick-add-wrap { overflow: hidden; transition: max-height 0.35s ease, opacity 0.3s ease; }
+        .quick-add-wrap.qclosed { max-height: 0; opacity: 0; pointer-events: none; }
+        .quick-add-wrap.qopen { max-height: 320px; opacity: 1; }
+        /* Streak */
+        .streak-win { display:inline-flex;align-items:center;gap:3px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:#dcfce7;color:#15803d; }
+        .streak-loss { display:inline-flex;align-items:center;gap:3px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;background:#fee2e2;color:#b91c1c; }
+    </style>
+</head>
+<body class="text-gray-800">
+<!-- Doraemon mascot watermark -->
+<div style="position:fixed;bottom:0;right:0;width:160px;opacity:0.13;pointer-events:none;z-index:0;user-select:none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 240"><circle cx="100" cy="85" r="78" fill="#0095d9"/><ellipse cx="100" cy="100" rx="62" ry="58" fill="white"/><circle cx="74" cy="70" r="18" fill="white"/><circle cx="126" cy="70" r="18" fill="white"/><circle cx="77" cy="73" r="11" fill="#111"/><circle cx="129" cy="73" r="11" fill="#111"/><circle cx="81" cy="69" r="4" fill="white"/><circle cx="133" cy="69" r="4" fill="white"/><circle cx="100" cy="97" r="9" fill="#cc0000"/><line x1="100" y1="106" x2="100" y2="120" stroke="#555" stroke-width="2.5"/><path d="M68 120 Q100 148 132 120" stroke="#555" stroke-width="3" fill="none" stroke-linecap="round"/><line x1="24" y1="96" x2="80" y2="100" stroke="#aaa" stroke-width="2"/><line x1="24" y1="108" x2="80" y2="108" stroke="#aaa" stroke-width="2"/><line x1="24" y1="120" x2="80" y2="116" stroke="#aaa" stroke-width="2"/><line x1="120" y1="100" x2="176" y2="96" stroke="#aaa" stroke-width="2"/><line x1="120" y1="108" x2="176" y2="108" stroke="#aaa" stroke-width="2"/><line x1="120" y1="116" x2="176" y2="120" stroke="#aaa" stroke-width="2"/><rect x="30" y="152" width="140" height="88" rx="20" fill="#0095d9"/><ellipse cx="100" cy="185" rx="50" ry="42" fill="white"/><path d="M62 185 a38 28 0 0 0 76 0" fill="#e8f4ff" stroke="#ccc" stroke-width="1.5"/><rect x="56" y="155" width="88" height="12" rx="6" fill="#cc0000"/><circle cx="100" cy="171" r="11" fill="#ffd700" stroke="#e5b800" stroke-width="1.5"/><circle cx="100" cy="171" r="3.5" fill="#997700"/><circle cx="22" cy="185" r="18" fill="#0095d9"/><circle cx="178" cy="185" r="18" fill="#0095d9"/><ellipse cx="72" cy="237" rx="25" ry="11" fill="#0095d9"/><ellipse cx="128" cy="237" rx="25" ry="11" fill="#0095d9"/></svg>
+</div>
+<input type="file" id="json-import-input" accept=".json" style="display:none">
+    <div id="app" class="container mx-auto p-4 sm:p-6 max-w-7xl">
+        <!-- 認證相關訊息顯示 -->
+        <div id="auth-error" class="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50 max-w-md">
+            <span class="block sm:inline"></span>
+        </div>
+        <div id="auth-success" class="fixed top-4 right-4 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded z-50 max-w-md">
+            <span class="block sm:inline"></span>
+        </div>
+        
+        <header class="mb-8">
+            <!-- 用戶認證區域 -->
+            <div class="flex justify-between items-center mb-6">
+                <div class="flex-1"></div>
+                <div class="flex items-center space-x-4">
+                    <!-- 登入按鈕 (僅供訪客) -->
+                    <button class="google-login-btn guest-only flex items-center px-4 py-2 rounded-lg text-gray-700 font-medium hover:shadow-lg transition-all duration-300" onclick="authManager.signInWithGoogle()">
+                        <svg class="w-5 h-5 mr-2" viewBox="0 0 24 24">
+                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                        </svg>
+                        使用 Google 登入
+                    </button>
+                    
+                    <!-- 用戶信息和登出按鈕 (僅供已登入用戶) -->
+                    <div class="user-info auth-required flex items-center space-x-3" style="display: none;">
+                        <!-- 用戶信息將由 JavaScript 動態插入 -->
+                    </div>
+                    <button class="logout-btn auth-required px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors" onclick="authManager.signOut()" style="display: none;">
+                        登出
+                    </button>
+                </div>
+            </div>
+            
+            <div class="flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">麻將牌局紀錄</h1>
+                <p class="text-gray-600 mt-1">詳細記錄與分析每一場激戰</p>
+            </div>
+             <div class="flex items-center gap-4">
+                <button id="dashboard-btn" class="flex items-center gap-2 bg-white text-gray-700 font-semibold py-2 px-4 rounded-lg shadow hover:bg-gray-50 transition">
+                    <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0h6m4-6v6a2 2 0 002 2h2a2 2 0 002-2v-6a2 2 0 00-2-2h-2a2 2 0 00-2 2z"></path></svg>
+                    <span>查看儀表板</span>
+                </button>
+                <div class="bg-gray-200 p-1 rounded-lg flex">
+                    <button id="view-list-btn" class="view-switch-btn px-4 py-2 text-sm font-semibold rounded-md transition">列表模式</button>
+                    <button id="view-calendar-btn" class="view-switch-btn px-4 py-2 text-sm font-semibold rounded-md transition">行事曆</button>
+                </div>
+                <button id="export-json-btn" title="備份資料 (JSON)" class="flex items-center gap-1.5 bg-white text-gray-600 font-semibold py-2 px-3 rounded-lg shadow hover:bg-gray-50 transition text-sm">
+                    <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    <span class="hidden sm:inline">備份</span>
+                </button>
+                <button id="import-json-btn" title="還原資料 (JSON)" class="flex items-center gap-1.5 bg-white text-gray-600 font-semibold py-2 px-3 rounded-lg shadow hover:bg-gray-50 transition text-sm">
+                    <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                    <span class="hidden sm:inline">還原</span>
+                </button>
+                <button id="dark-mode-btn" title="切換深色模式" class="flex items-center justify-center w-10 h-10 bg-white rounded-lg shadow hover:bg-gray-50 transition">
+                    <svg id="dark-icon" class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+                </button>
+                <button id="add-session-btn" class="flex items-center justify-center gap-2 btn-primary font-bold py-3 px-5 rounded-lg shadow-lg hover:scale-105 transform transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    <span>新增牌局</span>
+                </button>
+            </div>
+            </div>
+        </header>
+
+        <main>
+            <!-- Filter Section -->
+            <div id="filter-section" class="mb-6 p-4 bg-white rounded-xl shadow-md">
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
+                    <div>
+                        <label for="filter-keyword" class="text-sm font-medium text-gray-700">關鍵字搜尋</label>
+                        <input type="text" id="filter-keyword" placeholder="玩家, 地點, 備註..." class="mt-1 p-2 border rounded-md w-full text-sm">
+                    </div>
+                    <div>
+                        <label for="filter-start-date" class="text-sm font-medium text-gray-700">開始日期</label>
+                        <input type="date" id="filter-start-date" class="mt-1 p-2 border rounded-md w-full text-sm">
+                    </div>
+                    <div>
+                        <label for="filter-end-date" class="text-sm font-medium text-gray-700">結束日期</label>
+                        <input type="date" id="filter-end-date" class="mt-1 p-2 border rounded-md w-full text-sm">
+                    </div>
+                    <button id="clear-filter-btn" class="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition text-sm">清除篩選</button>
+                </div>
+                <!-- 快速新增 -->
+                <div class="mt-3 pt-3 border-t border-gray-100">
+                    <button id="quick-add-toggle" class="flex items-center gap-2 text-sm font-semibold text-indigo-600 hover:text-indigo-800 transition">
+                        <svg id="quick-add-arrow" class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                        快速記錄輸贏
+                    </button>
+                    <div id="quick-add-wrap" class="quick-add-wrap qclosed mt-3">
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
+                            <div><label class="text-xs font-medium text-gray-600">日期</label><input type="date" id="qa-date" class="mt-1 p-2 border rounded-md w-full text-sm"></div>
+                            <div><label class="text-xs font-medium text-gray-600">地點</label><input type="text" id="qa-location" placeholder="選填" class="mt-1 p-2 border rounded-md w-full text-sm" list="location-history-qa"></div>
+                            <div><label class="text-xs font-medium text-gray-600">我的輸贏</label><input type="number" id="qa-score" inputmode="decimal" placeholder="正=贏 負=輸" class="mt-1 p-2 border rounded-md w-full text-sm"></div>
+                            <button id="qa-save-btn" class="btn-primary font-bold py-2 px-4 rounded-lg text-sm mt-1">快速記錄</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="list-view" class="space-y-6"></div>
+            <div id="calendar-view" class="hidden">
+                 <div class="flex justify-between items-center mb-4 p-2 bg-white rounded-lg shadow">
+                    <button id="prev-month-btn" class="p-2 rounded-full hover:bg-gray-200 transition"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg></button>
+                    <h2 id="month-year-display" class="text-xl font-bold text-gray-900"></h2>
+                    <button id="next-month-btn" class="p-2 rounded-full hover:bg-gray-200 transition"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></button>
+                </div>
+                 <div class="bg-white rounded-xl shadow-lg">
+                    <div class="calendar-grid border-b"><div class="text-center font-semibold text-red-500 py-2">日</div><div class="text-center font-semibold text-gray-600 py-2">一</div><div class="text-center font-semibold text-gray-600 py-2">二</div><div class="text-center font-semibold text-gray-600 py-2">三</div><div class="text-center font-semibold text-gray-600 py-2">四</div><div class="text-center font-semibold text-gray-600 py-2">五</div><div class="text-center font-semibold text-green-500 py-2">六</div></div>
+                    <div id="calendar-grid" class="calendar-grid"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal Container -->
+    <div id="modal-container"></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = SpeechRecognition ? new SpeechRecognition() : null;
+    if (recognition) {
+        recognition.continuous = false;
+        recognition.lang = 'cmn-Hant-TW';
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+    }
+
+    const app = {
+        state: {
+            mainPlayerName: "我",
+            records: [], // { id, date, ...}
+            view: 'list', // Default view is now list
+            calendarDate: new Date(),
+            dashboardSelectedPlayers: [],
+            filters: {
+                keyword: '',
+                startDate: '',
+                endDate: '',
+            }
+        },
+        chartInstance: null,
+        elements: {
+            addSessionBtn: document.getElementById('add-session-btn'),
+            listView: document.getElementById('list-view'),
+            calendarView: document.getElementById('calendar-view'),
+            viewListBtn: document.getElementById('view-list-btn'),
+            viewCalendarBtn: document.getElementById('view-calendar-btn'),
+            dashboardBtn: document.getElementById('dashboard-btn'),
+            modalContainer: document.getElementById('modal-container'),
+            monthYearDisplay: document.getElementById('month-year-display'),
+            calendarGrid: document.getElementById('calendar-grid'),
+            prevMonthBtn: document.getElementById('prev-month-btn'),
+            nextMonthBtn: document.getElementById('next-month-btn'),
+            filterSection: document.getElementById('filter-section'),
+            filterKeyword: document.getElementById('filter-keyword'),
+            filterStartDate: document.getElementById('filter-start-date'),
+            filterEndDate: document.getElementById('filter-end-date'),
+            clearFilterBtn: document.getElementById('clear-filter-btn'),
+        },
+        showToast(message, type = 'info', duration = 3000) {
+            const icons = { success: '✓', error: '✕', info: 'ℹ', warning: '⚠' };
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<span style="font-size:1rem;flex-shrink:0">${icons[type] || ''}</span><span>${message}</span>`;
+            container.appendChild(toast);
+            requestAnimationFrame(() => requestAnimationFrame(() => toast.classList.add('show')));
+            setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 350); }, duration);
+        },
+        showConfirm(message, onConfirm) {
+            const modalHTML = `<div id="confirm-modal" class="fixed inset-0 z-[100] flex items-center justify-center p-4 modal-backdrop"><div class="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full modal-content"><h3 class="text-lg font-semibold text-gray-800 mb-2">確認操作</h3><p class="text-gray-600 text-sm mb-6">${message}</p><div class="flex gap-3 justify-end"><button id="confirm-cancel" class="py-2 px-5 bg-white border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition">取消</button><button id="confirm-ok" class="py-2 px-5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition">確定刪除</button></div></div></div>`;
+            this.elements.modalContainer.innerHTML += modalHTML;
+            const modal = document.getElementById('confirm-modal');
+            requestAnimationFrame(() => modal.classList.add('modal-open'));
+            document.getElementById('confirm-cancel').onclick = () => { modal.classList.remove('modal-open'); setTimeout(() => modal.remove(), 300); };
+            document.getElementById('confirm-ok').onclick = () => { modal.classList.remove('modal-open'); setTimeout(() => { modal.remove(); onConfirm(); }, 300); };
+        },
+        /* ===== DARK MODE ===== */
+        toggleDarkMode() {
+            const isDark = document.body.classList.toggle('dark');
+            localStorage.setItem('mahjong_dark_mode', isDark ? '1' : '0');
+            const icon = document.getElementById('dark-icon');
+            if (isDark) {
+                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>';
+            } else {
+                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>';
+            }
+        },
+        /* ===== JSON 備份/還原（舊資料遷移方法）===== */
+        exportJSON() {
+            const data = { version: 'v14', exportedAt: new Date().toISOString(), mainPlayerName: this.state.mainPlayerName, records: this.state.records };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `mahjong-backup-${new Date().toISOString().slice(0,10)}.json`;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            this.showToast(`已備份 ${this.state.records.length} 筆資料`, 'success');
+        },
+        importJSON(file) {
+            const reader = new FileReader();
+            reader.onload = e => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    const incoming = data.records || (Array.isArray(data) ? data : null);
+                    if (!incoming) throw new Error('格式錯誤');
+                    this.showConfirm(`匯入將覆蓋目前所有 ${this.state.records.length} 筆紀錄，確定嗎？`, () => {
+                        this.state.records = incoming;
+                        if (data.mainPlayerName) this.state.mainPlayerName = data.mainPlayerName;
+                        this.saveState();
+                        this.render();
+                        this.showToast(`成功匯入 ${incoming.length} 筆紀錄`, 'success');
+                    });
+                } catch(err) {
+                    this.showToast('JSON 格式錯誤，無法匯入', 'error');
+                }
+            };
+            reader.readAsText(file);
+        },
+        /* ===== 連勝/連敗 ===== */
+        calculateStreak(records, playerName) {
+            const sorted = [...records].sort((a, b) => new Date(`${a.date}T${a.startTime}`) - new Date(`${b.date}T${b.startTime}`));
+            let streak = 0, streakType = null;
+            for (const rec of sorted) {
+                let score = null;
+                if (rec.mode === 'chips') { const p = rec.players.find(x => x.name === playerName); if (p) score = p.score; }
+                else if (playerName === '我') score = rec.myScore;
+                if (score === null) continue;
+                const result = score > 0 ? 'win' : score < 0 ? 'loss' : null;
+                if (!result) { streak = 0; streakType = null; continue; }
+                if (result === streakType) { streak++; } else { streak = 1; streakType = result; }
+            }
+            return { streak, type: streakType };
+        },
+        /* ===== 累積損益折線圖 ===== */
+        renderCumulativeChart(canvasId, playerName) {
+            const sorted = [...this.state.records].sort((a,b)=>new Date(`${a.date}T${a.startTime}`)-new Date(`${b.date}T${b.startTime}`));
+            const labels = [], data = [];
+            let cum = 0;
+            sorted.forEach(rec => {
+                let score = null;
+                if (rec.mode === 'chips') { const p = rec.players.find(x=>x.name===playerName); if(p) score=p.score; }
+                else if (playerName === '我') score = rec.myScore;
+                if (score !== null) { cum += score; labels.push(rec.date); data.push(cum); }
+            });
+            const canvas = document.getElementById(canvasId);
+            if (!canvas || !labels.length) { if(canvas) canvas.parentElement.innerHTML = '<p class="text-sm text-gray-400 text-center py-4">暫無足夠資料</p>'; return; }
+            const existing = Chart.getChart(canvas);
+            if (existing) existing.destroy();
+            new Chart(canvas, {
+                type: 'line',
+                data: { labels, datasets: [{ label: '累積損益', data, borderColor: '#4f46e5', backgroundColor: 'rgba(79,70,229,0.08)', fill: true, tension: 0.3, pointRadius: 3, pointHoverRadius: 6 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ' ' + (ctx.raw >= 0 ? '+' : '') + ctx.raw.toLocaleString() } } }, scales: { y: { grid: { color: '#e5e7eb' } }, x: { ticks: { maxTicksLimit: 8, maxRotation: 30 }, grid: { display: false } } } }
+            });
+        },
+        /* ===== 玩家對戰分析 ===== */
+        renderHeadToHead(containerId, playerName) {
+            const stats = {};
+            this.state.records.forEach(rec => {
+                if (rec.mode !== 'chips') return;
+                const me = rec.players.find(p => p.name === playerName);
+                if (!me) return;
+                rec.players.filter(p => p.name !== playerName).forEach(opp => {
+                    if (!stats[opp.name]) stats[opp.name] = { games: 0, myWins: 0, myScore: 0 };
+                    stats[opp.name].games++;
+                    stats[opp.name].myScore += me.score;
+                    if (me.score > opp.score) stats[opp.name].myWins++;
+                });
+            });
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            const entries = Object.entries(stats).sort((a,b) => b[1].games - a[1].games);
+            if (!entries.length) { container.innerHTML = '<p class="text-sm text-gray-400 text-center py-4">暫無對戰資料</p>'; return; }
+            container.innerHTML = `<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b"><th class="text-left py-2 pr-4 font-semibold text-gray-600">對手</th><th class="text-center py-2 px-2 font-semibold text-gray-600">同場次</th><th class="text-center py-2 px-2 font-semibold text-gray-600">勝率</th><th class="text-right py-2 pl-4 font-semibold text-gray-600">對戰分差</th></tr></thead><tbody>${entries.map(([name, s]) => `<tr class="border-b border-gray-100 hover:bg-gray-50 transition"><td class="py-2 pr-4 font-medium">${name}</td><td class="text-center py-2 px-2 text-gray-500">${s.games}</td><td class="text-center py-2 px-2"><span class="${Math.round(s.myWins/s.games*100)>=50?'text-green-600':'text-red-500'} font-semibold">${Math.round(s.myWins/s.games*100)}%</span></td><td class="text-right py-2 pl-4 font-mono font-semibold ${s.myScore>=0?'score-positive':'score-negative'}">${s.myScore>=0?'+':''}${s.myScore.toLocaleString()}</td></tr>`).join('')}</tbody></table></div>`;
+        },
+        /* ===== 時段/星期分析 ===== */
+        renderTimeAnalysis(containerId, playerName) {
+            const dayLabels = ['日','一','二','三','四','五','六'];
+            const dayStat = Array.from({length:7}, ()=>({games:0,score:0}));
+            const hourBuckets = [
+                { label:'早上(6-12)', min:6, max:12, games:0, score:0 },
+                { label:'下午(12-18)', min:12, max:18, games:0, score:0 },
+                { label:'晚上(18-23)', min:18, max:23, games:0, score:0 },
+                { label:'深夜(23-6)', min:23, max:30, games:0, score:0 },
+            ];
+            this.state.records.forEach(rec => {
+                let score = null;
+                if (rec.mode === 'chips') { const p = rec.players.find(x=>x.name===playerName); if(p) score=p.score; }
+                else if (playerName === '我') score = rec.myScore;
+                if (score === null) return;
+                const d = new Date(`${rec.date}T${rec.startTime}`);
+                const dow = d.getDay(), hr = d.getHours();
+                dayStat[dow].games++; dayStat[dow].score += score;
+                const bucket = hourBuckets.find(b => hr >= b.min && hr < (b.max > 24 ? 24 : b.max)) || hourBuckets[3];
+                bucket.games++; bucket.score += score;
+            });
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            const mkRow = (label, s) => `<tr class="border-b border-gray-100"><td class="py-1.5 pr-3 text-sm font-medium w-20">${label}</td><td class="py-1.5 px-2 text-center text-xs text-gray-500">${s.games}場</td><td class="py-1.5 pl-2 text-right font-mono text-sm font-semibold ${s.score>=0?'score-positive':'score-negative'}">${s.score>=0?'+':''}${s.score.toLocaleString()}</td></tr>`;
+            container.innerHTML = `<div class="grid grid-cols-1 sm:grid-cols-2 gap-6"><div><p class="text-xs font-bold text-gray-500 uppercase mb-2">星期分析</p><table class="w-full">${dayStat.map((s,i)=>mkRow('週'+dayLabels[i], s)).join('')}</table></div><div><p class="text-xs font-bold text-gray-500 uppercase mb-2">時段分析</p><table class="w-full">${hourBuckets.map(b=>mkRow(b.label,b)).join('')}</table></div></div>`;
+        },
+        init() {
+            this.loadState();
+            this.render();
+            this.bindEvents();
+        },
+        bindEvents() {
+            this.elements.addSessionBtn.onclick = () => this.openModal();
+            this.elements.dashboardBtn.onclick = () => this.openDashboardModal();
+            document.getElementById('dark-mode-btn').onclick = () => this.toggleDarkMode();
+            document.getElementById('export-json-btn').onclick = () => this.exportJSON();
+            document.getElementById('import-json-btn').onclick = () => document.getElementById('json-import-input').click();
+            document.getElementById('json-import-input').onchange = e => { if (e.target.files[0]) { this.importJSON(e.target.files[0]); e.target.value = ''; } };
+            // Quick add toggle
+            document.getElementById('quick-add-toggle').onclick = () => {
+                const wrap = document.getElementById('quick-add-wrap');
+                const arrow = document.getElementById('quick-add-arrow');
+                const isOpen = wrap.classList.contains('qopen');
+                wrap.classList.toggle('qopen', !isOpen);
+                wrap.classList.toggle('qclosed', isOpen);
+                arrow.style.transform = isOpen ? '' : 'rotate(90deg)';
+                if (!isOpen) {
+                    const todayStr = new Date().toISOString().slice(0,10);
+                    document.getElementById('qa-date').value = todayStr;
+                    // populate location datalist
+                    let dl = document.getElementById('location-history-qa');
+                    if (!dl) { dl = document.createElement('datalist'); dl.id = 'location-history-qa'; document.body.appendChild(dl); }
+                    dl.innerHTML = [...new Set(this.state.records.map(r=>r.location).filter(Boolean))].map(l=>`<option value="${l}">`).join('');
+                }
+            };
+            document.getElementById('qa-save-btn').onclick = () => {
+                const date = document.getElementById('qa-date').value;
+                const score = parseInt(document.getElementById('qa-score').value, 10);
+                const location = document.getElementById('qa-location').value.trim();
+                if (!date || isNaN(score)) { this.showToast('請填寫日期和輸贏金額', 'error'); return; }
+                const now = new Date().toTimeString().slice(0,5);
+                const rec = { id: Date.now().toString(), date, startTime: now, endTime: now, location, base: '', points: '', rake: 0, notes: '', mode: 'cash', players: [], myScore: score };
+                this.state.records.push(rec);
+                this.saveState();
+                this.render();
+                document.getElementById('qa-score').value = '';
+                document.getElementById('qa-location').value = '';
+                this.showToast('快速記錄已儲存', 'success');
+            };
+            
+            const listAndModalClickHandler = e => {
+                const editBtn = e.target.closest('.edit-btn');
+                const deleteBtn = e.target.closest('.delete-btn');
+                const exportBtn = e.target.closest('.export-btn');
+                if (editBtn) {
+                    const modal = e.target.closest('.modal-content');
+                    if (modal && modal.parentElement) {
+                         this.closeModal(modal.parentElement.id, false);
+                    }
+                    setTimeout(() => this.openModal(editBtn.dataset.id), 50);
+                }
+                if (deleteBtn) {
+                    this.deleteRecord(deleteBtn.dataset.id, () => {
+                        const dailyModal = document.getElementById('daily-modal');
+                        if (dailyModal) {
+                            this.refreshDailyModal(dailyModal.dataset.date);
+                        }
+                    });
+                }
+                if (exportBtn) this.exportToICS(exportBtn.dataset.id);
+            };
+            this.elements.listView.addEventListener('click', listAndModalClickHandler);
+            this.elements.modalContainer.addEventListener('click', listAndModalClickHandler);
+            
+            this.elements.viewListBtn.onclick = () => this.setView('list');
+            this.elements.viewCalendarBtn.onclick = () => this.setView('calendar');
+            this.elements.prevMonthBtn.onclick = () => this.changeMonth(-1);
+            this.elements.nextMonthBtn.onclick = () => this.changeMonth(1);
+            this.elements.calendarGrid.addEventListener('click', e => {
+                const cell = e.target.closest('.day-cell:not(.other-month)');
+                if (cell) {
+                    this.openDailyModal(cell.dataset.date);
+                }
+            });
+
+            // Filter events
+            this.elements.filterKeyword.oninput = e => { this.state.filters.keyword = e.target.value; this.renderListView(); };
+            this.elements.filterStartDate.onchange = e => { this.state.filters.startDate = e.target.value; this.renderListView(); };
+            this.elements.filterEndDate.onchange = e => { this.state.filters.endDate = e.target.value; this.renderListView(); };
+            this.elements.clearFilterBtn.onclick = () => {
+                this.state.filters = { keyword: '', startDate: '', endDate: '' };
+                this.elements.filterKeyword.value = '';
+                this.elements.filterStartDate.value = '';
+                this.elements.filterEndDate.value = '';
+                this.renderListView();
+            };
+        },
+        loadState() {
+            if (localStorage.getItem('mahjong_dark_mode') === '1') {
+                document.body.classList.add('dark');
+                const icon = document.getElementById('dark-icon');
+                if (icon) icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>';
+            }
+            const mainPlayerName = localStorage.getItem('mahjong_main_player_v14');
+            if (mainPlayerName) this.state.mainPlayerName = mainPlayerName;
+
+            const records = localStorage.getItem('mahjong_sessions_v14');
+            if (records && JSON.parse(records).length > 0) {
+                 this.state.records = JSON.parse(records);
+            } else {
+                this.state.records = [
+                    {id: "1726336800001", date: "2025-09-14", startTime: "20:00", endTime: "23:30", location: "桃園龍潭住家", base: "100", points: "20", rake: 100, mode: "chips", players: [{name: "我", score: 1200}, {name: "雅玲", score: -600}, {name: "志強", score: -400}, {name: "小明", score: -300}], myScore: null, notes: "志強放槍絕殺"},
+                    {id: "1726164000001", date: "2025-09-12", startTime: "19:00", endTime: "22:00", location: "中壢小明家", base: "50", points: "10", rake: 0, mode: "chips", players: [{name: "我", score: -1800}, {name: "小明", score: 2500}, {name: "志強", score: -300}, {name: "阿傑", score: -400}], myScore: null, notes: ""},
+                    {id: "1726171200002", date: "2025-09-12", startTime: "22:30", endTime: "23:59", location: "中壢小明家", base: "50", points: "10", rake: 0, mode: "cash", players: [], myScore: 650, notes: "續攤"},
+                    {id: "1725732000001", date: "2025-09-07", startTime: "14:00", endTime: "18:00", location: "新竹麻將館", base: "200", points: "50", rake: 500, mode: "chips", players: [{name: "我", score: 2400}, {name: "志強", score: -1000}, {name: "陌生人A", score: -1100}, {name: "陌生人B", score: -800}], myScore: null, notes: "今天手氣好"},
+                    {id: "1725040800001", date: "2025-08-30", startTime: "21:00", endTime: "23:50", location: "桃園龍潭住家", base: "100", points: "20", rake: 0, mode: "chips", players: [{name: "我", score: -350}, {name: "雅玲", score: 1100}, {name: "阿姨", score: -500}, {name: "舅舅", score: -250}], myScore: null, notes: ""},
+                    {id: "1724599200001", date: "2025-08-25", startTime: "15:00", endTime: "17:00", location: "中壢小明家", base: "50", points: "10", rake: 0, mode: "cash", players: [], myScore: -500, notes: ""},
+                ];
+            }
+            this.state.records.sort((a, b) => new Date(`${b.date}T${b.startTime}`) - new Date(`${a.date}T${a.startTime}`));
+        },
+        saveState() {
+            localStorage.setItem('mahjong_main_player_v14', this.state.mainPlayerName);
+            this.state.records.sort((a, b) => new Date(`${b.date}T${b.startTime}`) - new Date(`${a.date}T${a.startTime}`));
+            localStorage.setItem('mahjong_sessions_v14', JSON.stringify(this.state.records));
+        },
+        render() {
+            this.elements.viewListBtn.classList.toggle('active', this.state.view === 'list');
+            this.elements.viewCalendarBtn.classList.toggle('active', this.state.view === 'calendar');
+            this.elements.listView.classList.toggle('hidden', this.state.view !== 'list');
+            this.elements.filterSection.classList.toggle('hidden', this.state.view !== 'list');
+            this.elements.calendarView.classList.toggle('hidden', this.state.view !== 'calendar');
+
+            if (this.state.view === 'list') this.renderListView();
+            else this.renderCalendarView();
+        },
+        openDashboardModal() {
+            const allPlayerNames = this.getAllPlayerNames();
+            this.state.dashboardSelectedPlayers = [...allPlayerNames]; // Select all by default
+
+            const playerCheckboxes = [...allPlayerNames].map(name => `
+                <label class="flex items-center gap-2 text-sm p-2 rounded-md hover:bg-gray-100">
+                    <input type="checkbox" name="dashboard-player" value="${name}" class="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500" checked>
+                    ${name}
+                </label>
+            `).join('');
+
+            const modalHTML = `
+            <div id="dashboard-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop">
+                <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl modal-content max-h-[90vh] flex flex-col">
+                    <div class="p-5 border-b flex justify-between items-center">
+                        <h3 class="text-xl font-semibold">戰績儀表板</h3>
+                        <button id="close-dashboard-modal-btn" class="p-2 text-gray-400 hover:text-gray-700 rounded-full text-2xl leading-none">&times;</button>
+                    </div>
+                    <div class="p-6 flex-grow overflow-y-auto">
+                        <section id="dashboard-panel">
+                            <div class="flex flex-col md:flex-row justify-between md:items-center mb-4 gap-4">
+                                <div>
+                                    <h3 class="font-bold text-lg text-gray-800">個人數據分析</h3>
+                                    <div class="flex items-center gap-2 mt-1">
+                                        <label for="main-player-select-dashboard" class="text-sm text-gray-600 whitespace-nowrap">分析對象：</label>
+                                        <select id="main-player-select-dashboard" class="p-2 border rounded-md text-sm bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none w-32"></select>
+                                    </div>
+                                </div>
+                                <div class="text-left md:text-right">
+                                    <h3 class="font-bold text-lg text-indigo-700">${this.state.calendarDate.getFullYear()}年 ${this.state.calendarDate.getMonth() + 1}月統計</h3>
+                                    <button id="export-month-btn" class="mt-1 text-xs bg-green-100 text-green-700 font-semibold py-1 px-3 rounded-full hover:bg-green-200 transition flex items-center gap-1 ml-auto md:ml-0">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                        <span>匯出本月紀錄</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="personal-stats-content" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-2"></div>
+                             <div id="stats-footnote" class="text-xs text-gray-500 mb-4 h-4"></div>
+                            <!-- Dashboard tabs -->
+                            <div class="mb-4 flex gap-2 flex-wrap">
+                                <button data-tab="chart" class="dash-tab active text-xs font-semibold px-3 py-1.5 rounded-full border-2 border-indigo-500 bg-indigo-50 text-indigo-700 transition">📊 當月比較</button>
+                                <button data-tab="cumulative" class="dash-tab text-xs font-semibold px-3 py-1.5 rounded-full border-2 border-gray-200 text-gray-500 hover:border-indigo-300 transition">📈 累積損益</button>
+                                <button data-tab="h2h" class="dash-tab text-xs font-semibold px-3 py-1.5 rounded-full border-2 border-gray-200 text-gray-500 hover:border-indigo-300 transition">🤜 對戰分析</button>
+                                <button data-tab="time" class="dash-tab text-xs font-semibold px-3 py-1.5 rounded-full border-2 border-gray-200 text-gray-500 hover:border-indigo-300 transition">⏰ 時段分析</button>
+                            </div>
+                            <!-- Tab panels -->
+                            <div id="tab-chart">
+                                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                    <div class="md:col-span-1 p-4 border rounded-lg bg-gray-50 max-h-60 overflow-y-auto">
+                                        <p class="font-semibold text-sm mb-2">選擇比較玩家：</p>
+                                        <div id="dashboard-player-checkboxes" class="flex flex-col gap-1">${playerCheckboxes}</div>
+                                    </div>
+                                    <div class="md:col-span-3 min-h-[250px]"><canvas id="monthly-chart"></canvas></div>
+                                </div>
+                            </div>
+                            <div id="tab-cumulative" class="hidden min-h-[280px]"><canvas id="cumulative-chart"></canvas></div>
+                            <div id="tab-h2h" class="hidden" id="h2h-container"></div>
+                            <div id="tab-time" class="hidden" id="time-container"></div>
+                        </section>
+                    </div>
+                </div>
+            </div>`;
+            this.elements.modalContainer.innerHTML = modalHTML;
+            requestAnimationFrame(() => document.getElementById('dashboard-modal').classList.add('modal-open'));
+
+            document.getElementById('close-dashboard-modal-btn').onclick = () => this.closeModal('dashboard-modal');
+            
+            this.renderDashboardContent(); // Initial render
+            
+            // Bind events for dashboard content
+            document.getElementById('main-player-select-dashboard').onchange = e => {
+                this.state.mainPlayerName = e.target.value;
+                this.saveState();
+                this.renderPersonalStats(document.getElementById('personal-stats-content'), document.getElementById('stats-footnote'));
+                const activeTab = document.querySelector('.dash-tab.active')?.dataset.tab;
+                if (activeTab === 'cumulative') this.renderCumulativeChart('cumulative-chart', this.state.mainPlayerName);
+                if (activeTab === 'h2h') this.renderHeadToHead('tab-h2h', this.state.mainPlayerName);
+                if (activeTab === 'time') this.renderTimeAnalysis('tab-time', this.state.mainPlayerName);
+            };
+            document.getElementById('dashboard-player-checkboxes').onchange = e => {
+                 this.state.dashboardSelectedPlayers = [...document.querySelectorAll('input[name="dashboard-player"]:checked')].map(el => el.value);
+                 this.renderMonthlyChart(document.getElementById('monthly-chart')); // Re-render only chart
+            };
+            document.getElementById('export-month-btn').onclick = () => this.exportMonthToICS();
+            // Tab switching
+            document.querySelectorAll('.dash-tab').forEach(btn => {
+                btn.onclick = () => {
+                    document.querySelectorAll('.dash-tab').forEach(b => { b.classList.remove('active','bg-indigo-50','text-indigo-700','border-indigo-500'); b.classList.add('border-gray-200','text-gray-500'); });
+                    btn.classList.add('active','bg-indigo-50','text-indigo-700','border-indigo-500'); btn.classList.remove('border-gray-200','text-gray-500');
+                    ['chart','cumulative','h2h','time'].forEach(t => document.getElementById('tab-'+t)?.classList.add('hidden'));
+                    const panel = document.getElementById('tab-'+btn.dataset.tab);
+                    if (panel) panel.classList.remove('hidden');
+                    if (btn.dataset.tab === 'cumulative') this.renderCumulativeChart('cumulative-chart', this.state.mainPlayerName);
+                    if (btn.dataset.tab === 'h2h') this.renderHeadToHead('tab-h2h', this.state.mainPlayerName);
+                    if (btn.dataset.tab === 'time') this.renderTimeAnalysis('tab-time', this.state.mainPlayerName);
+                };
+            });
+        },
+        renderDashboardContent() {
+            this.renderPlayerSelector(document.getElementById('main-player-select-dashboard'));
+            this.renderPersonalStats(document.getElementById('personal-stats-content'), document.getElementById('stats-footnote'));
+            this.renderMonthlyChart(document.getElementById('monthly-chart'));
+        },
+        getAllPlayerNames() {
+            const allPlayerNames = new Set(["我"]);
+            this.state.records.forEach(rec => {
+                if (rec.mode === 'chips') {
+                    rec.players.forEach(p => allPlayerNames.add(p.name));
+                }
+            });
+            return [...allPlayerNames].sort();
+        },
+        renderPlayerSelector(selectElement) {
+            const allPlayerNames = this.getAllPlayerNames();
+            if (!allPlayerNames.includes(this.state.mainPlayerName)) {
+                this.state.mainPlayerName = "我";
+            }
+            selectElement.innerHTML = allPlayerNames.map(name =>
+                `<option value="${name}" ${this.state.mainPlayerName === name ? 'selected' : ''}>${name}</option>`
+            ).join('');
+        },
+        renderPersonalStats(containerElement, footnoteElement) {
+            const getMyStats = (records, playerName) => {
+                let totalScore = 0, wins = 0, games = 0, biggestWin = 0, biggestLoss = 0;
+                let hasCashRecords = false;
+
+                records.forEach(rec => {
+                    let playerScore = 0;
+                    let isParticipant = false;
+
+                    if (rec.mode === 'chips') {
+                        const player = rec.players.find(p => p.name === playerName);
+                        if (player) {
+                            playerScore = player.score;
+                            isParticipant = true;
+                        }
+                    } else { // mode is 'cash'
+                        const cashPlayerName = "我"; // Cash mode only ever applies to "我"
+                        if (playerName === cashPlayerName) {
+                            playerScore = rec.myScore;
+                            isParticipant = true;
+                            hasCashRecords = true;
+                        }
+                    }
+
+                    if (isParticipant) {
+                        totalScore += playerScore;
+                        games++;
+                        if (playerScore > 0) wins++;
+                        if (playerScore > biggestWin) biggestWin = playerScore;
+                        if (playerScore < biggestLoss) biggestLoss = playerScore;
+                    }
+                });
+                
+                const winRate = games > 0 ? Math.round((wins / games) * 100) : 0;
+                const avgScore = games > 0 ? Math.round(totalScore / games) : 0;
+                return { score: totalScore, winRate, biggestWin, biggestLoss, hasCashRecords, games, avgScore };
+            };
+            
+            const monthlyRecords = this.state.records.filter(r => r.date.startsWith(`${this.state.calendarDate.getFullYear()}-${String(this.state.calendarDate.getMonth() + 1).padStart(2, '0')}`));
+            const yearlyRecords = this.state.records.filter(r => r.date.startsWith(`${this.state.calendarDate.getFullYear()}`));
+            
+            const myMonthly = getMyStats(monthlyRecords, this.state.mainPlayerName);
+            const myYearly = getMyStats(yearlyRecords, this.state.mainPlayerName);
+            const myTotal = getMyStats(this.state.records, this.state.mainPlayerName);
+
+            const showAsterisk = myMonthly.hasCashRecords || myYearly.hasCashRecords || myTotal.hasCashRecords;
+
+            const renderStatCard = (label, value, subtext = '', hasAsterisk = false) => {
+                const asterisk = (hasAsterisk && this.state.mainPlayerName === "我") ? `<span class="text-red-500">*</span>` : '';
+                let valueClass = 'text-gray-800';
+                if (typeof value === 'number' && subtext === '') {
+                    valueClass = value >= 0 ? 'score-positive' : 'score-negative';
+                    value = this.formatCurrency(value);
+                } else if (subtext !== '') {
+                    value = `${value}<span class="text-base font-medium text-gray-500 ml-1">${subtext}</span>`
+                }
+                return `<div class="stat-card p-4 rounded-lg shadow-sm"><p class="text-sm font-semibold text-gray-600">${label}${asterisk}</p><p class="text-xl font-bold font-mono mt-1 ${valueClass}">${value}</p></div>`;
+            };
+
+            const { streak, type: streakType } = this.calculateStreak(this.state.records, this.state.mainPlayerName);
+            const streakHtml = streak > 0 ? `<span class="${streakType==='win'?'streak-win':'streak-loss'}">${streakType==='win'?'🔥':'💔'} 連${streakType==='win'?'勝':'敗'} ${streak}</span>` : '';
+            const streakCard = `<div class="stat-card p-4 rounded-lg shadow-sm"><p class="text-sm font-semibold text-gray-600">目前連勝/連敗</p><p class="text-xl font-bold mt-1">${streakHtml || '<span class="text-gray-400 text-base">—</span>'}</p></div>`;
+            containerElement.innerHTML =
+                renderStatCard('本月場次', myMonthly.games, '場') +
+                renderStatCard('本月輸贏', myMonthly.score, '', myMonthly.hasCashRecords) +
+                renderStatCard('本月場均', myMonthly.avgScore, '', myMonthly.hasCashRecords) +
+                renderStatCard('本月勝率', myMonthly.winRate, '%', myMonthly.hasCashRecords) +
+                streakCard +
+                renderStatCard('本年輸贏', myYearly.score, '', myYearly.hasCashRecords) +
+                renderStatCard('生涯總計', myTotal.score, '', myTotal.hasCashRecords) +
+                renderStatCard('最大單場勝利', myTotal.biggestWin, '', myTotal.hasCashRecords) +
+                renderStatCard('最大單場敗北', myTotal.biggestLoss, '', myTotal.hasCashRecords);
+            
+            footnoteElement.innerHTML = (showAsterisk && this.state.mainPlayerName === "我") ? '* 包含僅供參考的現金制個人紀錄' : '';
+        },
+        renderMonthlyChart(canvasElement) {
+             if (this.chartInstance) {
+                this.chartInstance.destroy();
+            }
+            const monthlyRecords = this.state.records.filter(r => r.date.startsWith(`${this.state.calendarDate.getFullYear()}-${String(this.state.calendarDate.getMonth() + 1).padStart(2, '0')}`));
+            const stats = {};
+            this.state.dashboardSelectedPlayers.forEach(p => stats[p] = 0);
+            
+            monthlyRecords.forEach(rec => {
+                if (rec.mode === 'chips') {
+                    rec.players.forEach(p => {
+                        if (stats.hasOwnProperty(p.name)) stats[p.name] += p.score;
+                    });
+                } else {
+                    const cashPlayerName = "我";
+                    if (stats.hasOwnProperty(cashPlayerName)) stats[cashPlayerName] += rec.myScore;
+                }
+            });
+
+            const sortedPlayers = Object.entries(stats).sort((a, b) => b[1] - a[1]);
+            const labels = sortedPlayers.map(p => p[0]);
+            const data = sortedPlayers.map(p => p[1]);
+
+            const ctx = canvasElement.getContext('2d');
+            this.chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '當月輸贏',
+                        data: data,
+                        backgroundColor: data.map(v => v >= 0 ? 'rgba(22, 163, 74, 0.6)' : 'rgba(220, 38, 38, 0.6)'),
+                        borderColor: data.map(v => v >= 0 ? 'rgba(22, 163, 74, 1)' : 'rgba(220, 38, 38, 1)'),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false }, title: { display: true, text: `${this.state.calendarDate.getMonth() + 1}月 玩家戰績比較` } },
+                    scales: { y: { beginAtZero: true, grid: { color: '#e5e7eb' } }, x: { grid: { display: false } } }
+                }
+            });
+        },
+        setView(view) { this.state.view = view; this.render(); },
+        renderListView() {
+            const { keyword, startDate, endDate } = this.state.filters;
+            const filteredRecords = this.state.records.filter(rec => {
+                const keywordLower = keyword.toLowerCase();
+                const matchKeyword = keywordLower === '' ||
+                    (rec.location && rec.location.toLowerCase().includes(keywordLower)) ||
+                    (rec.notes && rec.notes.toLowerCase().includes(keywordLower)) ||
+                    (rec.mode === 'chips' && rec.players.some(p => p.name.toLowerCase().includes(keywordLower)));
+
+                const matchStartDate = startDate === '' || rec.date >= startDate;
+                const matchEndDate = endDate === '' || rec.date <= endDate;
+                
+                return matchKeyword && matchStartDate && matchEndDate;
+            });
+            
+            const list = this.elements.listView; 
+            if (filteredRecords.length === 0) {
+                list.innerHTML = `<div class="text-center text-gray-500 py-16 px-6 bg-white rounded-xl shadow-md"><h3 class="mt-2 text-lg font-medium text-gray-900">找不到符合的牌局紀錄</h3><p class="mt-1 text-sm text-gray-500">試試看調整篩選條件，或清除篩選。</p></div>`;
+                return;
+            }
+            const groups = {};
+            filteredRecords.forEach(rec => {
+                if (!groups[rec.date]) groups[rec.date] = [];
+                groups[rec.date].push(rec);
+            });
+            let html = '';
+            Object.keys(groups).sort((a, b) => b.localeCompare(a)).forEach(date => {
+                const dayRecords = groups[date];
+                let dayTotal = null;
+                dayRecords.forEach(rec => {
+                    if (rec.mode === 'cash' && this.state.mainPlayerName === '我') {
+                        if (dayTotal === null) dayTotal = 0;
+                        dayTotal += rec.myScore || 0;
+                    } else if (rec.mode === 'chips') {
+                        const me = rec.players.find(p => p.name === this.state.mainPlayerName);
+                        if (me) { if (dayTotal === null) dayTotal = 0; dayTotal += me.score; }
+                    }
+                });
+                const totalBadge = dayTotal !== null
+                    ? `<span class="font-mono text-sm font-bold ${dayTotal >= 0 ? 'score-positive' : 'score-negative'}">${this.formatCurrency(dayTotal)}</span>`
+                    : '';
+                html += `<div class="date-group-header"><span>${date}</span><span class="flex items-center gap-3"><span class="text-xs font-semibold text-indigo-400">${dayRecords.length} 場</span>${totalBadge}</span></div>`;
+                html += dayRecords.map(rec => this.renderCard(rec)).join('');
+            });
+            list.innerHTML = html;
+        },
+        renderCard(rec) {
+            const locationHtml = rec.location ? `<div class="flex items-center gap-1.5 text-sm text-gray-500 mt-2"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg><span>${rec.location}</span></div>` : '';
+            const rakeHtml = rec.rake > 0 ? `<div class="text-xs text-gray-500">抽頭/場費: ${rec.rake}</div>` : '';
+            const modeTag = rec.mode === 'chips' ? `<span class="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-1 rounded-full">籌碼制</span>` : `<span class="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-1 rounded-full">現金制</span>`;
+            let resultHtml = '';
+            if (rec.mode === 'chips') {
+                resultHtml = `<h4 class="font-semibold text-gray-700 mb-2">四人戰績</h4><div class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">${rec.players.map(p => `<div class="flex justify-between items-center"><span class="text-gray-600 truncate pr-2">${p.name}：</span><span class="font-mono font-medium ${p.score >= 0 ? 'score-positive' : 'score-negative'}">${this.formatCurrency(p.score)}</span></div>`).join('')}</div>`;
+            } else {
+                resultHtml = `<h4 class="font-semibold text-gray-700 mb-2">個人戰績</h4><div class="flex justify-between items-center"><span class="text-gray-600">我的輸贏：</span><span class="text-2xl font-mono font-bold ${rec.myScore >= 0 ? 'score-positive' : 'score-negative'}">${this.formatCurrency(rec.myScore)}</span></div>`;
+            }
+            const notesHtml = rec.notes ? `<div class="mt-3 pt-3 border-t border-gray-200 text-sm text-gray-600"><p><b class="font-medium">備註:</b> ${rec.notes}</p></div>` : '';
+
+            return `<div class="bg-white rounded-xl shadow-lg p-5 transition-shadow hover:shadow-xl"><div class="flex justify-between items-start pb-3 border-b border-gray-200"><div><p class="font-bold text-xl text-gray-800">${rec.date}</p><p class="text-sm text-gray-500">${rec.startTime} ~ ${rec.endTime}</p>${locationHtml}</div><div class="flex flex-col items-end gap-3"><div class="flex items-center gap-3"><div class="text-center"><p class="text-xs text-gray-500">底/台</p><p class="font-semibold text-indigo-600">${rec.base}/${rec.points}</p></div>${modeTag}</div><div class="flex gap-1"><button data-id="${rec.id}" class="export-btn p-2 text-gray-400 hover:text-green-600 rounded-full hover:bg-gray-100 transition" title="匯出至行事曆"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg></button><button data-id="${rec.id}" class="edit-btn p-2 text-gray-400 hover:text-indigo-600 rounded-full hover:bg-gray-100 transition" title="編輯"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg></button><button data-id="${rec.id}" class="delete-btn p-2 text-gray-400 hover:text-red-600 rounded-full hover:bg-gray-100 transition" title="刪除"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button></div></div></div><div class="pt-4">${resultHtml}${rakeHtml ? `<div class="text-right mt-2">${rakeHtml}</div>` : ''}${notesHtml}</div></div>`;
+        },
+        renderCalendarView() { this.renderCalendar(); },
+        renderCalendar() {
+            const date = this.state.calendarDate;
+            const year = date.getFullYear();
+            const month = date.getMonth();
+            this.elements.monthYearDisplay.textContent = `${year}年 ${month + 1}月`;
+            this.elements.calendarGrid.innerHTML = '';
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const todayStr = new Date().toISOString().slice(0, 10);
+
+            for (let i = 0; i < firstDay; i++) { this.elements.calendarGrid.innerHTML += `<div class="day-cell other-month border-r border-t border-gray-200"></div>`; }
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const dailyRecords = this.state.records.filter(r => r.date === dateStr);
+                const hasRecord = dailyRecords.length > 0;
+                const isToday = dateStr === todayStr;
+                const cell = document.createElement('div');
+                cell.className = `day-cell relative p-1.5 border-r border-t border-gray-200 transition ${hasRecord ? 'has-record' : ''} ${isToday ? 'today' : ''}`;
+                cell.dataset.date = dateStr;
+                let innerHtml = `<span class="day-number text-sm font-semibold">${day}</span>`;
+                if (hasRecord) {
+                    let dailyTotal = 0;
+                    let hasData = false;
+                    dailyRecords.forEach(rec => {
+                        if (rec.mode === 'cash' && this.state.mainPlayerName === '我') {
+                            dailyTotal += rec.myScore || 0; hasData = true;
+                        } else if (rec.mode === 'chips') {
+                            const me = rec.players.find(p => p.name === this.state.mainPlayerName);
+                            if (me) { dailyTotal += me.score; hasData = true; }
+                        }
+                    });
+                    if (hasData && dailyTotal !== 0) {
+                        const sc = dailyTotal > 0 ? 'score-positive' : 'score-negative';
+                        innerHtml += `<span class="day-score font-mono ${sc}">${this.formatCurrency(dailyTotal)}</span>`;
+                    }
+                    innerHtml += `<span class="absolute bottom-1 right-1 text-gray-400 leading-none" style="font-size:9px">${dailyRecords.length}場</span>`;
+                }
+                cell.innerHTML = innerHtml;
+                this.elements.calendarGrid.appendChild(cell);
+            }
+        },
+        changeMonth(delta) { this.state.calendarDate.setMonth(this.state.calendarDate.getMonth() + delta); this.render(); },
+        openDailyModal(dateStr) {
+            const dailyRecords = this.state.records.filter(r => r.date === dateStr);
+            let recordsHtml = dailyRecords.length > 0 ? dailyRecords.map(rec => this.renderMiniCard(rec)).join('') : `<p class="text-center text-sm text-gray-500 py-8">本日無紀錄。</p>`;
+            const modalHTML = `<div id="daily-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop"><div class="bg-white rounded-xl shadow-xl w-full max-w-lg modal-content max-h-[90vh] flex flex-col" data-date="${dateStr}"><div class="p-5 border-b flex justify-between items-center"><h3 class="text-xl font-semibold">${dateStr} 的牌局</h3><button id="close-daily-modal-btn" class="p-2 text-gray-400 hover:text-gray-700 rounded-full text-2xl leading-none">&times;</button></div><div class="p-6 flex-grow overflow-y-auto space-y-4" id="daily-modal-list">${recordsHtml}</div><div class="bg-gray-50 px-6 py-4 flex justify-end gap-3 rounded-b-xl border-t"><button id="add-from-daily-modal-btn" class="w-full btn-primary font-bold py-3 px-5 rounded-lg flex items-center justify-center gap-2"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg><span>為此日新增牌局</span></button></div></div></div>`;
+            this.elements.modalContainer.innerHTML += modalHTML;
+            const modal = document.getElementById('daily-modal');
+            requestAnimationFrame(() => modal.classList.add('modal-open'));
+            document.getElementById('close-daily-modal-btn').onclick = () => this.closeModal('daily-modal', false);
+            document.getElementById('add-from-daily-modal-btn').onclick = () => {
+                this.closeModal('daily-modal', false);
+                setTimeout(() => this.openModal(null, dateStr), 300); // Wait for fade out animation
+            };
+        },
+        refreshDailyModal(dateStr) {
+            const dailyRecords = this.state.records.filter(r => r.date === dateStr);
+            const listElement = document.getElementById('daily-modal-list');
+            if (listElement) {
+                listElement.innerHTML = dailyRecords.length > 0
+                    ? dailyRecords.map(rec => this.renderMiniCard(rec)).join('')
+                    : `<p class="text-center text-sm text-gray-500 py-8">本日無紀錄。</p>`;
+            }
+        },
+        renderMiniCard(rec) {
+            const rakeHtml = rec.rake > 0 ? `<div class="text-xs text-gray-500">抽: ${rec.rake}</div>` : '';
+            const resultHtml = rec.mode === 'chips' ? `<div class="text-xs grid grid-cols-2 gap-x-2">${rec.players.map(p => `<div class="flex justify-between"><span class="truncate pr-1">${p.name}</span><span class="font-mono ${p.score >= 0 ? 'score-positive' : 'score-negative'}">${this.formatCurrency(p.score)}</span></div>`).join('')}</div>` : `<div class="text-sm flex justify-between"><span>我的戰績</span><span class="font-mono font-bold ${rec.myScore >= 0 ? 'score-positive' : 'score-negative'}">${this.formatCurrency(rec.myScore)}</span></div>`;
+            const notesHtml = rec.notes ? `<p class="text-xs text-gray-500 mt-1 truncate">註: ${rec.notes}</p>` : '';
+            return `<div class="bg-gray-50 p-3 rounded-lg text-gray-700"><div class="flex justify-between items-center mb-2"><div class="flex-1"><p class="text-xs font-semibold">${rec.startTime} - ${rec.endTime} @ ${rec.location || '未記錄地點'}</p></div><div class="flex items-center gap-2">${rakeHtml}<div class="flex gap-1"><button data-id="${rec.id}" class="export-btn p-1 text-gray-400 hover:text-green-600" title="匯出至行事曆"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg></button><button data-id="${rec.id}" class="edit-btn p-1 text-gray-400 hover:text-indigo-600" title="編輯"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg></button><button data-id="${rec.id}" class="delete-btn p-1 text-gray-400 hover:text-red-600" title="刪除"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button></div></div></div>${resultHtml}${notesHtml}</div>`;
+        },
+        openModal(recordId = null, prefillDate = null) {
+            const isEditing = recordId !== null;
+            let record = isEditing ? this.state.records.find(r => r.id === recordId) : {};
+            if (prefillDate && !isEditing) record.date = prefillDate;
+            const now = new Date();
+            const timeToStr = (d) => d.toTimeString().slice(0, 5);
+            const modalHTML = `<div id="session-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 modal-backdrop"><div class="bg-white rounded-xl shadow-xl w-full max-w-2xl modal-content max-h-[90vh] flex flex-col"><div class="p-5 border-b"><h3 class="text-xl font-semibold">${isEditing ? '編輯牌局' : '新增牌局'}</h3></div><div class="p-6 flex-grow overflow-y-auto space-y-5"><div class="grid grid-cols-2 md:grid-cols-3 gap-4"><div><label class="block text-sm font-medium text-gray-700">日期</label><input type="date" id="rec-date" class="mt-1 p-2 border rounded-md w-full"></div><div><label class="block text-sm font-medium text-gray-700">開始時間</label><input type="time" id="rec-start-time" class="mt-1 p-2 border rounded-md w-full"></div><div><label class="block text-sm font-medium text-gray-700">結束時間</label><input type="time" id="rec-end-time" class="mt-1 p-2 border rounded-md w-full"></div><div class="grid grid-cols-2 gap-2"><label class="block text-sm font-medium text-gray-700 col-span-2">地點</label><div class="col-span-2 flex items-center gap-2"><input type="text" id="rec-location" placeholder="例：板橋王董家" class="p-2 border rounded-md w-full"><button class="speech-btn p-2 text-gray-500 hover:text-indigo-600" data-target="rec-location" title="語音輸入"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg></button></div></div><div class="grid grid-cols-2 gap-2"><div><label class="block text-sm font-medium text-gray-700">底</label><input type="number" id="rec-base" class="mt-1 p-2 border rounded-md w-full"></div><div><label class="block text-sm font-medium text-gray-700">台</label><input type="number" id="rec-points" class="mt-1 p-2 border rounded-md w-full"></div></div><div><label class="block text-sm font-medium text-gray-700">抽頭/場費</label><input type="number" id="rec-rake" placeholder="0" class="mt-1 p-2 border rounded-md w-full"></div></div><div><label class="block text-sm font-medium text-gray-700 mb-2">計分方式</label><div class="flex gap-4"><label class="flex items-center gap-2 p-3 border rounded-lg cursor-pointer flex-1"><input type="radio" name="mode" value="chips" class="w-4 h-4 text-indigo-600 focus:ring-indigo-500"> 籌碼制 (記錄四人)</label><label class="flex items-center gap-2 p-3 border rounded-lg cursor-pointer flex-1"><input type="radio" name="mode" value="cash" class="w-4 h-4 text-indigo-600 focus:ring-indigo-500"> 現金制 (僅記個人)</label></div></div><div id="result-area"></div><div><label class="block text-sm font-medium text-gray-700">備註</label><div class="flex items-center gap-2 mt-1"><textarea id="rec-notes" rows="2" placeholder="記錄特殊牌型或趣事..." class="p-2 border rounded-md w-full"></textarea><button class="speech-btn p-2 text-gray-500 hover:text-indigo-600 self-start" data-target="rec-notes" title="語音輸入"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg></button></div></div></div><div class="bg-gray-50 px-6 py-4 flex justify-end gap-3 rounded-b-xl border-t"><button id="cancel-btn" class="py-2 px-6 bg-white border border-gray-300 rounded-lg font-medium hover:bg-gray-50">取消</button><button id="save-btn" class="py-2 px-6 btn-primary rounded-lg font-medium">儲存</button></div></div></div>`;
+            this.elements.modalContainer.innerHTML += modalHTML;
+            document.getElementById('rec-date').value = record?.date || now.toISOString().slice(0, 10);
+            document.getElementById('rec-start-time').value = record?.startTime || timeToStr(new Date(now.getTime() - 10800000));
+            document.getElementById('rec-end-time').value = record?.endTime || timeToStr(now);
+            document.getElementById('rec-location').value = record?.location || '';
+            document.getElementById('rec-base').value = record?.base || '';
+            document.getElementById('rec-points').value = record?.points || '';
+            document.getElementById('rec-rake').value = record?.rake || '';
+            document.getElementById('rec-notes').value = record?.notes || '';
+            const mode = record?.mode || 'chips';
+            document.querySelector(`input[name="mode"][value="${mode}"]`).checked = true;
+            this.updateResultArea(mode, record, !isEditing);
+            requestAnimationFrame(()=>document.getElementById('session-modal').classList.add('modal-open'));
+            document.getElementById('cancel-btn').onclick = () => this.closeModal('session-modal');
+            document.getElementById('save-btn').onclick = () => {
+                if (this.saveRecord(recordId)) {
+                    this.showToast(isEditing ? '牌局已更新' : '牌局已新增', 'success');
+                    this.closeModal('session-modal');
+                }
+            };
+            document.querySelectorAll('input[name="mode"]').forEach(radio => { radio.onchange = (e) => this.updateResultArea(e.target.value, record, !isEditing); });
+            // Location autocomplete
+            const locationInput = document.getElementById('rec-location');
+            const locationHistory = [...new Set(this.state.records.map(r => r.location).filter(Boolean))];
+            if (locationHistory.length > 0) {
+                const locDl = document.createElement('datalist');
+                locDl.id = 'location-history';
+                locationHistory.forEach(loc => { const opt = document.createElement('option'); opt.value = loc; locDl.appendChild(opt); });
+                document.getElementById('session-modal').appendChild(locDl);
+                locationInput.setAttribute('list', 'location-history');
+            }
+            // Player names autocomplete
+            const pDl = document.createElement('datalist');
+            pDl.id = 'players-ac';
+            this.getAllPlayerNames().forEach(n => { const opt = document.createElement('option'); opt.value = n; pDl.appendChild(opt); });
+            document.getElementById('session-modal').appendChild(pDl);
+        },
+        updateResultArea(mode, record = null, prefillPlayers = false) {
+            const area = document.getElementById('result-area');
+            if (mode === 'chips') {
+                let playerFields = '';
+                for (let i = 0; i < 4; i++) {
+                    const defaultName = (prefillPlayers && i === 0) ? this.state.mainPlayerName : '';
+                    const name = record?.players?.[i]?.name || defaultName;
+                    const score = record?.players?.[i]?.score === undefined ? '' : record.players[i].score;
+                    playerFields += `<div class="flex items-center gap-2"><input type="text" id="player-name-${i}" name="player-name" placeholder="玩家 ${i+1}" value="${name}" class="p-2 border rounded-md w-full" list="players-ac"><button class="speech-btn p-2 text-gray-500 hover:text-indigo-600" data-target="player-name-${i}" title="語音輸入"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg></button><input type="number" name="player-score" placeholder="輸贏" value="${score}" class="p-2 border rounded-md w-full"></div>`;
+                }
+                area.innerHTML = `<label class="block text-sm font-medium text-gray-700">四人輸贏</label><div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">${playerFields}</div><p id="score-sum-error" class="text-red-500 text-sm text-center mt-2 hidden">四人輸贏總和 + 抽頭不為 0</p>`;
+            } else {
+                area.innerHTML = `<label class="block text-sm font-medium text-gray-700">我的輸贏</label><input type="number" id="my-score" placeholder="輸入個人輸贏金額" value="${record?.myScore || ''}" class="mt-1 p-2 border rounded-md w-full">`;
+            }
+            document.querySelectorAll('.speech-btn').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.preventDefault();
+                    if (!recognition) { this.showToast('您的瀏覽器不支援語音輸入功能', 'warning'); return; }
+                    this.startSpeechRecognition(document.getElementById(btn.dataset.target), btn);
+                };
+            });
+        },
+        startSpeechRecognition(targetInput, targetButton) {
+            targetButton.classList.add('recording');
+            recognition.start();
+            recognition.onresult = (event) => {
+                targetInput.value = event.results[0][0].transcript;
+            };
+            recognition.onspeechend = () => {
+                recognition.stop();
+            };
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error', event.error);
+                targetButton.classList.remove('recording');
+            };
+            recognition.onend = () => {
+                targetButton.classList.remove('recording');
+            };
+        },
+        saveRecord(recordId) {
+            const startTime = document.getElementById('rec-start-time').value;
+            const endTime = document.getElementById('rec-end-time').value;
+            if (endTime && startTime > endTime) {
+                this.showToast('結束時間不能早於開始時間', 'error');
+                return false;
+            }
+
+            const newRecord = {
+                id: recordId || Date.now().toString(),
+                date: document.getElementById('rec-date').value,
+                startTime, endTime,
+                location: document.getElementById('rec-location').value.trim(),
+                base: document.getElementById('rec-base').value,
+                points: document.getElementById('rec-points').value,
+                rake: parseInt(document.getElementById('rec-rake').value, 10) || 0,
+                notes: document.getElementById('rec-notes').value.trim(),
+                mode: document.querySelector('input[name="mode"]:checked').value,
+            };
+
+            if (!newRecord.date || !newRecord.startTime || !newRecord.endTime) {
+                this.showToast('請填寫日期與時間', 'error');
+                return false;
+            }
+
+            if (newRecord.mode === 'chips') {
+                const names = [...document.querySelectorAll('input[name="player-name"]')].map(el => el.value.trim());
+                const scores = [...document.querySelectorAll('input[name="player-score"]')];
+                if (names.some(name => name === '')) {
+                    this.showToast('所有玩家都必須填寫名稱', 'error');
+                    return false;
+                }
+                if (new Set(names).size < 4) {
+                    this.showToast('玩家名稱不可重複', 'error');
+                    return false;
+                }
+                let scoreSum = 0;
+                newRecord.players = [];
+                for (let i = 0; i < 4; i++) {
+                    const score = parseInt(scores[i].value, 10) || 0;
+                    newRecord.players.push({ name: names[i], score });
+                    scoreSum += score;
+                }
+                if (scoreSum + newRecord.rake !== 0) {
+                    const errorEl = document.getElementById('score-sum-error');
+                    errorEl.textContent = `錯誤：四人輸贏總和(${scoreSum}) + 抽頭(${newRecord.rake}) 不為 0`;
+                    errorEl.classList.remove('hidden');
+                    return false;
+                }
+                newRecord.myScore = null;
+            } else {
+                newRecord.myScore = document.getElementById('my-score').value === '' ? null : parseInt(document.getElementById('my-score').value, 10);
+                if (newRecord.myScore === null) {
+                    this.showToast('請填寫您的輸贏金額', 'error');
+                    return false;
+                }
+                newRecord.players = [];
+            }
+
+            if (recordId) {
+                const index = this.state.records.findIndex(r => r.id === recordId);
+                if (index > -1) this.state.records[index] = newRecord;
+            } else {
+                this.state.records.push(newRecord);
+            }
+            this.saveState();
+            return true;
+        },
+        deleteRecord(id, callback) {
+            this.showConfirm('您確定要刪除這場牌局紀錄嗎？此操作無法復原。', () => {
+                this.state.records = this.state.records.filter(r => r.id !== id);
+                this.saveState();
+                if (callback) callback();
+                this.render();
+                this.showToast('牌局已刪除', 'info');
+            });
+        },
+        formatCurrency(num) {
+            if (typeof num !== 'number') return num;
+            const sign = num > 0 ? '+' : '';
+            return sign + num.toLocaleString();
+        },
+        closeModal(modalId, fullRender = true) {
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                modal.classList.remove('modal-open');
+                setTimeout(() => {
+                    modal.remove();
+                }, 300);
+            }
+            if (fullRender) {
+                this.render();
+            }
+        },
+        exportToICS(recordId) {
+            const rec = this.state.records.find(r => r.id === recordId);
+            if (!rec) return;
+            const formatDT = (date, time) => `${date.replace(/-/g, '')}T${time.replace(/:/g, '')}00`;
+            const startDate = formatDT(rec.date, rec.startTime);
+            const endDate = formatDT(rec.date, rec.endTime);
+            let description = `底/台: ${rec.base}/${rec.points}\\n`;
+            if(rec.rake > 0) description += `抽頭/場費: ${rec.rake}\\n`;
+            description += '\\n';
+            if (rec.mode === 'chips') {
+                description += '四人戰績:\\n' + rec.players.map(p => `${p.name}: ${this.formatCurrency(p.score)}`).join('\\n');
+            } else {
+                description += `個人戰績: ${this.formatCurrency(rec.myScore)}`;
+            }
+            if(rec.notes) description += `\\n\\n備註: ${rec.notes}`;
+            const icsContent = ['BEGIN:VCALENDAR','VERSION:2.0','BEGIN:VEVENT',`UID:${rec.id}@mahjong.app`,`DTSTAMP:${new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15)}Z`,`DTSTART:${startDate}`,`DTEND:${endDate}`,`SUMMARY:麻將牌局 @ ${rec.location || '未記錄地點'}`,`LOCATION:${rec.location || ''}`,`DESCRIPTION:${description}`,'END:VEVENT','END:VCALENDAR'].join('\r\n');
+            const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `mahjong-${rec.date}.ics`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        },
+        exportMonthToICS() {
+            const year = this.state.calendarDate.getFullYear();
+            const month = this.state.calendarDate.getMonth() + 1;
+            const monthlyRecords = this.state.records.filter(r => r.date.startsWith(`${year}-${String(month).padStart(2, '0')}`));
+            if (monthlyRecords.length === 0) {
+                this.showToast('本月沒有任何紀錄可匯出', 'warning');
+                return;
+            }
+            const icsEvents = monthlyRecords.map(rec => {
+                const formatDT = (date, time) => `${date.replace(/-/g, '')}T${time.replace(/:/g, '')}00`;
+                const startDate = formatDT(rec.date, rec.startTime);
+                const endDate = formatDT(rec.date, rec.endTime);
+                let description = `底/台: ${rec.base}/${rec.points}\\n`;
+                if(rec.rake > 0) description += `抽頭/場費: ${rec.rake}\\n`;
+                description += '\\n';
+                if (rec.mode === 'chips') {
+                    description += '四人戰績:\\n' + rec.players.map(p => `${p.name}: ${this.formatCurrency(p.score)}`).join('\\n');
+                } else {
+                    description += `個人戰績: ${this.formatCurrency(rec.myScore)}`;
+                }
+                if(rec.notes) description += `\\n\\n備註: ${rec.notes}`;
+                return ['BEGIN:VEVENT',`UID:${rec.id}@mahjong.app`,`DTSTAMP:${new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15)}Z`,`DTSTART:${startDate}`,`DTEND:${endDate}`,`SUMMARY:麻將牌局 @ ${rec.location || '未記錄地點'}`,`LOCATION:${rec.location || ''}`,`DESCRIPTION:${description}`,'END:VEVENT'].join('\r\n');
+            }).join('\r\n');
+            const icsContent = ['BEGIN:VCALENDAR','VERSION:2.0',icsEvents,'END:VCALENDAR'].join('\r\n');
+            const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `mahjong-${year}-${String(month).padStart(2, '0')}.ics`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        },
+    };
+    
+    app.init();
+});
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+</script>
+
+<div id="toast-container"></div>
+</body>
+</html>

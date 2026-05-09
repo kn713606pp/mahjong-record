@@ -1,0 +1,12 @@
+# Claude Code 設定
+.claude/
+
+# Firebase 敏感設定（若有）
+firebase-config.js
+.env
+*.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
