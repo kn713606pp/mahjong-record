@@ -1,4 +1,4 @@
-const CACHE = 'mahjong-v1';
+const CACHE = 'mahjong-v2.1';
 const ASSETS = [
   './mj.html',
   'https://cdn.tailwindcss.com',
