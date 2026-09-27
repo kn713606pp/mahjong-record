@@ -313,8 +313,10 @@ document.addEventListener('DOMContentLoaded', () => {
             requestAnimationFrame(() => requestAnimationFrame(() => toast.classList.add('show')));
             setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 350); }, duration);
         },
-        showConfirm(message, onConfirm) {
-            const modalHTML = `<div id="confirm-modal" class="fixed inset-0 z-[100] flex items-center justify-center p-4 modal-backdrop"><div class="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full modal-content"><h3 class="text-lg font-semibold text-gray-800 mb-2">確認操作</h3><p class="text-gray-600 text-sm mb-6">${message}</p><div class="flex gap-3 justify-end"><button id="confirm-cancel" class="py-2 px-5 bg-white border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition">取消</button><button id="confirm-ok" class="py-2 px-5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition">確定刪除</button></div></div></div>`;
+        showConfirm(message, onConfirm, opts = {}) {
+            const okLabel = opts.okLabel || '確定刪除';
+            const okClass = opts.okClass || 'bg-red-600 hover:bg-red-700';
+            const modalHTML = `<div id="confirm-modal" class="fixed inset-0 z-[100] flex items-center justify-center p-4 modal-backdrop"><div class="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full modal-content"><h3 class="text-lg font-semibold text-gray-800 mb-2">確認操作</h3><p class="text-gray-600 text-sm mb-6">${message}</p><div class="flex gap-3 justify-end"><button id="confirm-cancel" class="py-2 px-5 bg-white border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition">取消</button><button id="confirm-ok" class="py-2 px-5 ${okClass} text-white rounded-lg font-medium transition">${okLabel}</button></div></div></div>`;
             this.elements.modalContainer.innerHTML += modalHTML;
             const modal = document.getElementById('confirm-modal');
             requestAnimationFrame(() => modal.classList.add('modal-open'));
@@ -453,36 +455,120 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         },
         /* ===== JSON 備份/還原（舊資料遷移方法）===== */
-        exportJSON() {
-            const data = { version: 'v14', exportedAt: new Date().toISOString(), mainPlayerName: this.state.mainPlayerName, records: this.state.records };
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        buildEventICS(rec) {
+            const formatDT = (date, time) => `${date.replace(/-/g, '')}T${time.replace(/:/g, '')}00`;
+            let description = `底/台: ${rec.base}/${rec.points}\\n`;
+            if (rec.rake > 0) description += `抽頭/場費: ${rec.rake}\\n`;
+            description += '\\n';
+            if (rec.mode === 'chips') {
+                description += '四人戰績:\\n' + rec.players.map(p => `${p.name}: ${this.formatCurrency(p.score)}`).join('\\n');
+            } else {
+                description += `個人戰績: ${this.formatCurrency(rec.myScore)}`;
+            }
+            if (rec.notes) description += `\\n\\n備註: ${rec.notes}`;
+            return ['BEGIN:VEVENT', `UID:${rec.id}@mahjong.app`, `DTSTAMP:${new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15)}Z`, `DTSTART:${formatDT(rec.date, rec.startTime)}`, `DTEND:${formatDT(rec.date, rec.endTime)}`, `SUMMARY:麻將牌局 @ ${rec.location || '未記錄地點'}`, `LOCATION:${rec.location || ''}`, `DESCRIPTION:${description}`, 'END:VEVENT'].join('\r\n');
+        },
+        buildAllICS(records) {
+            return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//mahjong.app//v2//ZH', 'X-WR-CALNAME:麻將牌局', ...records.map(r => this.buildEventICS(r)), 'END:VCALENDAR'].join('\r\n');
+        },
+        async deliverFile(blob, filename) {
+            // 手機優先走分享選單（存到「檔案」、雲端、或直接開進行事曆），不支援時退回下載
+            try {
+                const file = new File([blob], filename, { type: blob.type });
+                if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                    await navigator.share({ files: [file], title: filename });
+                    return 'shared';
+                }
+            } catch (err) {
+                if (err && err.name === 'AbortError') return 'cancelled';
+            }
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url;
-            a.download = `mahjong-backup-${new Date().toISOString().slice(0,10)}.json`;
+            a.href = url; a.download = filename;
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            this.showToast(`已備份 ${this.state.records.length} 筆資料`, 'success');
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            return 'downloaded';
         },
-        importJSON(file) {
+        async exportJSON() {
+            const data = {
+                app: 'mahjong-record', kind: 'full-backup', version: 'v14', exportedFrom: 'v2',
+                exportedAt: new Date().toISOString(),
+                mainPlayerName: this.state.mainPlayerName,
+                records: this.state.records,
+                presets: this.state.presets,
+                calendarICS: this.buildAllICS(this.state.records),
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const result = await this.deliverFile(blob, `mahjong-backup-${new Date().toISOString().slice(0,10)}.json`);
+            if (result === 'cancelled') return;
+            this.showToast(`已備份 ${this.state.records.length} 筆資料與整份行事曆`, 'success');
+        },
+        offerCalendar(records, icsText) {
+            if (!records.length) return;
+            const ics = icsText || this.buildAllICS(records);
+            this.showConfirm(`要把這 ${records.length} 場牌局一併加進手機行事曆嗎？<br><span class="text-sm text-gray-500">會產生一個行事曆檔，開啟後選擇加入 Apple 或 Google 行事曆。</span>`, async () => {
+                const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+                await this.deliverFile(blob, `mahjong-calendar-${new Date().toISOString().slice(0,10)}.ics`);
+            }, { okLabel: '加進行事曆', okClass: 'bg-indigo-600 hover:bg-indigo-700' });
+        },
+        applyImport(data, incoming) {
+            this.state.records = incoming;
+            if (data.mainPlayerName) this.state.mainPlayerName = data.mainPlayerName;
+            if (Array.isArray(data.presets) && data.presets.length) { this.state.presets = data.presets.slice(0, 10); this.savePresets(); }
+            this.saveState();
+            localStorage.setItem('mahjong_setup_done', '1');
+            this.render();
+            this.showToast(`成功匯入 ${incoming.length} 筆紀錄`, 'success');
+            setTimeout(() => this.offerCalendar(incoming, data.calendarICS), 400);
+        },
+        importJSON(file, opts = {}) {
             const reader = new FileReader();
             reader.onload = e => {
                 try {
                     const data = JSON.parse(e.target.result);
                     const incoming = data.records || (Array.isArray(data) ? data : null);
                     if (!incoming) throw new Error('格式錯誤');
-                    this.showConfirm(`匯入將覆蓋目前所有 ${this.state.records.length} 筆紀錄，確定嗎？`, () => {
-                        this.state.records = incoming;
-                        if (data.mainPlayerName) this.state.mainPlayerName = data.mainPlayerName;
-                        this.saveState();
-                        this.render();
-                        this.showToast(`成功匯入 ${incoming.length} 筆紀錄`, 'success');
-                    });
+                    const hasRealData = !!localStorage.getItem('mahjong_sessions_v14') && this.state.records.length > 0;
+                    if (opts.firstRun || !hasRealData) {
+                        this.applyImport(data, incoming);
+                    } else {
+                        this.showConfirm(`匯入將覆蓋目前所有 ${this.state.records.length} 筆紀錄，確定嗎？`, () => this.applyImport(data, incoming), { okLabel: '確定匯入', okClass: 'bg-indigo-600 hover:bg-indigo-700' });
+                    }
                 } catch(err) {
                     this.showToast('JSON 格式錯誤，無法匯入', 'error');
                 }
             };
             reader.readAsText(file);
+        },
+        /* ===== 首次啟動：全新開始 / 匯入舊紀錄 ===== */
+        openSetupModal() {
+            const stored = localStorage.getItem('mahjong_sessions_v14');
+            const existing = stored ? JSON.parse(stored).length : 0;
+            const keepBtn = existing > 0 ? `<button id="setup-keep" class="w-full text-left p-4 border rounded-lg hover:bg-gray-50 transition"><p class="font-semibold">沿用目前資料</p><p class="text-sm text-gray-500 mt-1">這個瀏覽器裡已有 ${existing} 場牌局，直接繼續用。</p></button>` : '';
+            const modalHTML = `<div id="setup-modal" class="fixed inset-0 z-[90] flex items-center justify-center p-4 modal-backdrop"><div class="bg-white rounded-xl shadow-xl w-full max-w-md modal-content"><div class="p-5 border-b"><h3 class="text-xl font-semibold">歡迎使用麻將戰績分析中心</h3><p class="text-sm text-gray-500 mt-1">第一次啟動，請選擇怎麼開始。</p></div><div class="p-5 space-y-3">${keepBtn}<button id="setup-import" class="w-full text-left p-4 border-2 border-indigo-500 rounded-lg hover:bg-indigo-50 transition"><p class="font-semibold text-indigo-700">匯入舊紀錄（含行事曆）</p><p class="text-sm text-gray-500 mt-1">選擇舊版「一鍵匯出全部」或本版「備份」產生的 mahjong-backup 檔，牌局全部帶過來，並可一併加進手機行事曆。</p></button><button id="setup-fresh" class="w-full text-left p-4 border rounded-lg hover:bg-gray-50 transition"><p class="font-semibold">全新開始</p><p class="text-sm text-gray-500 mt-1">從零開始記錄，不載入任何舊資料。</p></button></div></div></div>`;
+            this.elements.modalContainer.innerHTML += modalHTML;
+            const modal = document.getElementById('setup-modal');
+            requestAnimationFrame(() => modal.classList.add('modal-open'));
+            const close = () => { modal.classList.remove('modal-open'); setTimeout(() => modal.remove(), 300); };
+            const keep = document.getElementById('setup-keep');
+            if (keep) keep.onclick = () => { localStorage.setItem('mahjong_setup_done', '1'); close(); };
+            document.getElementById('setup-fresh').onclick = () => {
+                this.state.records = [];
+                this.saveState();
+                localStorage.setItem('mahjong_setup_done', '1');
+                close();
+                this.render();
+                this.showToast('已建立空白的戰績本，按「新增牌局」開始記錄', 'success');
+            };
+            document.getElementById('setup-import').onclick = () => {
+                const input = document.getElementById('json-import-input');
+                input.onchange = e => {
+                    input.onchange = this._defaultImportHandler;
+                    if (e.target.files[0]) { close(); this.importJSON(e.target.files[0], { firstRun: true }); }
+                    e.target.value = '';
+                };
+                input.click();
+            };
         },
         /* ===== 連勝/連敗 ===== */
         calculateStreak(records, playerName) {
@@ -570,6 +656,7 @@ document.addEventListener('DOMContentLoaded', () => {
             this.loadState();
             this.render();
             this.bindEvents();
+            if (localStorage.getItem('mahjong_setup_done') !== '1') this.openSetupModal();
         },
         bindEvents() {
             this.elements.addSessionBtn.onclick = () => this.openModal();
@@ -578,7 +665,8 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('dark-mode-btn').onclick = () => this.toggleDarkMode();
             document.getElementById('export-json-btn').onclick = () => this.exportJSON();
             document.getElementById('import-json-btn').onclick = () => document.getElementById('json-import-input').click();
-            document.getElementById('json-import-input').onchange = e => { if (e.target.files[0]) { this.importJSON(e.target.files[0]); e.target.value = ''; } };
+            this._defaultImportHandler = e => { if (e.target.files[0]) { this.importJSON(e.target.files[0]); e.target.value = ''; } };
+            document.getElementById('json-import-input').onchange = this._defaultImportHandler;;
             // Quick add toggle
             document.getElementById('quick-add-toggle').onclick = () => {
                 const wrap = document.getElementById('quick-add-wrap');
@@ -672,6 +760,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const records = localStorage.getItem('mahjong_sessions_v14');
             if (records && JSON.parse(records).length > 0) {
                  this.state.records = JSON.parse(records);
+            } else if (localStorage.getItem('mahjong_setup_done') === '1') {
+                // 使用者已在首次啟動選過「全新開始」或已匯入，空白就是空白，不再塞範例
+                this.state.records = [];
             } else {
                 this.state.records = [
                     {id: "1726336800001", date: "2025-09-14", startTime: "20:00", endTime: "23:30", location: "桃園龍潭住家", base: "100", points: "20", rake: 100, mode: "chips", players: [{name: "我", score: 1200}, {name: "雅玲", score: -600}, {name: "志強", score: -400}, {name: "小明", score: -300}], myScore: null, notes: "志強放槍絕殺"},
